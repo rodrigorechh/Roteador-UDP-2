@@ -1,5 +1,5 @@
 #define BUFLEN 100
-#define NODES 4
+#define QTD_MAXIMA_ROTEADORES 10
 
 // packet types
 #define DATA 0
@@ -24,5 +24,24 @@ typedef struct pacote
     char message[150];
     int type;
     int ack;
-    int sendervec[NODES];
+    int sendervec[QTD_MAXIMA_ROTEADORES];
 } pacote;
+
+void printaNodo();
+void printaVec();
+void printaTable();
+void printaVizinhos();
+
+int idx(int myid);
+void mapeia();
+void loadLinks();
+void loadConfs(int vizinhos[]);
+void socketConfig();
+void *controlVec();
+void sendMyVec();
+void sendPacket(pacote packet, int strategy);
+void *terminal();
+void *router(void *porta);
+void verificaEnlaces();
+void updateFullTable();
+void verificaVolta(pacote packet);

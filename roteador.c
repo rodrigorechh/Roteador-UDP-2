@@ -9,36 +9,18 @@
 #include <stdio_ext.h>
 #include "headers/structures.h"
 
-void printaNodo();
-void printaVec();
-void printaTable();
-void printaVizinhos();
-
-int idx(int myid);
-void mapeia();
-void loadLinks();
-void loadConfs(int vizinhos[]);
-void socketConfig();
-void *controlVec();
-void sendMyVec();
-void sendPacket(pacote packet, int strategy);
-void *terminal();
-void *router(void *porta);
-void verificaEnlaces();
-void updateFullTable();
-
 struct roteador *roteadores;
 struct sockaddr_in si_me, si_other;
 int *meuid;
 pthread_mutex_t timerMutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t tableMutex = PTHREAD_MUTEX_INITIALIZER;
 int sock, seq = 0, confirmacao = 0, tentativa = 0;
-int unlinkRouter[NODES];
-int nodos[NODES], qt_nodos = 0;
-int *myvec, *myvec_original, *enlaces, *saida, *saida_original;
-int *table[NODES];
+int unlinkRouter[QTD_MAXIMA_ROTEADORES];
+int nodos[QTD_MAXIMA_ROTEADORES], qt_nodos = 0;
+int *meus_vetores, *myvec_original, *enlaces, *saida, *saida_original;
+int *table[QTD_MAXIMA_ROTEADORES];
 
-int vizinhos[NODES], n_viz = 1;
+int vizinhos[QTD_MAXIMA_ROTEADORES], n_viz = 1;
 
 void die(char *s)
 {
@@ -105,7 +87,7 @@ int main(int argc, char *argv[ ])
         printf("Olá, sou o roteador %d:\n", *meuid);
     }
 
-    saida = malloc(sizeof(int) * NODES);
+    saida = malloc(sizeof(int) * QTD_MAXIMA_ROTEADORES);
     mapeia();
     loadLinks(*meuid);
 
@@ -151,18 +133,18 @@ void printaVec(int *vec){
 
 void printaTable(){
     puts("\n--Tabela de Roteamento--");
-    for(int i = 0; i < NODES; i++){
+    for(int i = 0; i < qt_nodos; i++){
         if(table[i] == -1){
             puts("N/A");
             continue;
         }
-        for(int j = 0; j < NODES; j++){
+        for(int j = 0; j < qt_nodos; j++){
             printf("[%d]", table[i][j]);
         }
         puts("");
     }
     printf("\nsaida: ");
-    for(int i = 0; i < NODES; i++){
+    for(int i = 0; i < qt_nodos; i++){
         printf("[%d]", saida[i]);
     }
     puts("");
@@ -207,11 +189,11 @@ void mapeia(){
 
 void loadLinks(int myid){
     int rot1, rot2, custo;
-    myvec = malloc(sizeof(int) * qt_nodos);
+    meus_vetores = malloc(sizeof(int) * qt_nodos);
 
-    memset(myvec, -1, sizeof(int) * qt_nodos);
+    memset(meus_vetores, -1, sizeof(int) * qt_nodos);
 
-    myvec[idx(myid)] = 0;
+    meus_vetores[idx(myid)] = 0;
 
     FILE *file = fopen("configs/enlaces.config", "r");
     if (!file)
@@ -222,10 +204,10 @@ void loadLinks(int myid){
     while (fscanf(file, "%d %d %d", &rot1, &rot2, &custo) != EOF){
         for(int i=0; i < qt_nodos; i++){
             if(rot1 == myid){
-                myvec[idx(rot2)] = custo;
+                meus_vetores[idx(rot2)] = custo;
                 adicionaVizinho(rot2);
             }if(rot2 == myid){
-                myvec[idx(rot1)] = custo;
+                meus_vetores[idx(rot1)] = custo;
                 adicionaVizinho(rot1);
             }
         }
@@ -233,8 +215,8 @@ void loadLinks(int myid){
     fclose(file);
 
     memset(table, -1, sizeof(int*) * qt_nodos);
-    table[idx(myid)] = myvec;
-    enlaces = copyvec(myvec, NODES);
+    table[idx(myid)] = meus_vetores;
+    enlaces = copyvec(meus_vetores, QTD_MAXIMA_ROTEADORES);
 }
 
 void loadConfs(int vizinhos[])
@@ -244,14 +226,14 @@ void loadConfs(int vizinhos[])
     FILE *file;
     roteadores = malloc(sizeof(struct roteador) * n_viz);
 
-    memset(saida, -1, sizeof(int) * NODES);
+    memset(saida, -1, sizeof(int) * QTD_MAXIMA_ROTEADORES);
 
     for(int i=1; i<n_viz; i++){
         saida[idx(vizinhos[i])] = vizinhos[i];
     }
 
-    saida_original = copyvec(saida, NODES);
-    myvec_original = copyvec(myvec, NODES);
+    saida_original = copyvec(saida, QTD_MAXIMA_ROTEADORES);
+    myvec_original = copyvec(meus_vetores, QTD_MAXIMA_ROTEADORES);
 
     for(int i=0; i<n_viz; i++){
         file = fopen("configs/roteador.config", "r");
@@ -304,7 +286,7 @@ void sendMyVec()
     vec_packet.type = CONTROL;
     vec_packet.ack = 0;
     for (int i=0 ; i<qt_nodos ; i++)
-        vec_packet.sendervec[i] = myvec[i];
+        vec_packet.sendervec[i] = meus_vetores[i];
 
     for (int i = 1; i < n_viz; i++){
         vec_packet.id_dest = vizinhos[i];
@@ -400,7 +382,7 @@ void *terminal()
             }
         }
         pthread_mutex_unlock(&timerMutex);
-        table[idx(*meuid)] = myvec;
+        table[idx(*meuid)] = meus_vetores;
     }
 
     return 0;
@@ -454,7 +436,7 @@ void *router(void *porta)
         }else if (id_destino == roteadores[0].id && packet.type == CONTROL){
             verificaVolta(packet);
             unlinkRouter[idx(packet.id_font)] = 0;
-            table[idx(packet.id_font)] = copyvec(packet.sendervec, NODES);
+            table[idx(packet.id_font)] = copyvec(packet.sendervec, QTD_MAXIMA_ROTEADORES);
             updateFullTable();
         }
     }
@@ -477,10 +459,10 @@ void verificaEnlaces()
 {
     pthread_mutex_lock(&tableMutex);
     int mudou = 0;
-    for(int i = 0; i < NODES; i++){
+    for(int i = 0; i < qt_nodos; i++){
         if(unlinkRouter[i] > 2){
             table[i] = myvec_original[i] = saida[i] = -1;
-            int *mynewvec = copyvec(myvec_original, NODES);
+            int *mynewvec = copyvec(myvec_original, qt_nodos);
             table[idx(*meuid)] = mynewvec;
             mudou = 1;
 
@@ -506,8 +488,8 @@ void updateFullTable(){
 
     int *lastvec;
     lastvec = malloc(sizeof(int) * qt_nodos);
-    lastvec = copyvec(myvec, NODES);
-    myvec = copyvec(myvec_original, NODES);
+    lastvec = copyvec(meus_vetores, QTD_MAXIMA_ROTEADORES);
+    meus_vetores = copyvec(myvec_original, QTD_MAXIMA_ROTEADORES);
 
     for(int i=0 ; i<qt_nodos ; i++){
         if(i == idx(*meuid) || table[i] == -1)
@@ -517,27 +499,27 @@ void updateFullTable(){
                 continue;
 
             int novocusto = table[i][j] + myvec_original[i];
-            if(novocusto < myvec[j] || myvec[j] == -1){
-                myvec[j] = novocusto;
+            if(novocusto < meus_vetores[j] || meus_vetores[j] == -1){
+                meus_vetores[j] = novocusto;
                 saida[j] = nodos[i];
                 if(novocusto > 52){
                     printf("Detectado contagem ao infinito, enlace removido!\n");
-                    myvec[j] = -1;
+                    meus_vetores[j] = -1;
                     saida[j] = -1;
                 }
             }
         }
     }
-    myvec[idx(*meuid)] = 0;
+    meus_vetores[idx(*meuid)] = 0;
     saida[idx(*meuid)] = -1;
-    table[idx(*meuid)] = myvec;
-    for(int j=0 ; j<NODES ; j++){
+    table[idx(*meuid)] = meus_vetores;
+    for(int j=0 ; j<qt_nodos ; j++){
         if(table[idx(*meuid)][j] == -1)
             saida[j] = -1;
     }
     pthread_mutex_unlock(&tableMutex);
-    for(int i=0 ; i<NODES ; i++){
-        if(lastvec[i] != myvec[i]){
+    for(int i=0 ; i<qt_nodos ; i++){
+        if(lastvec[i] != meus_vetores[i]){
             printf("\n\nTabela atualizada ");
             now();
             printaTable();
