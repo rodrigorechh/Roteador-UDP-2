@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <stdio_ext.h>
 #include "headers/structures.h"
+#include <stdbool.h>
 
 struct roteador *roteadores_vizinhos;
 struct sockaddr_in socket_roteador, si_other;
@@ -21,6 +22,10 @@ int *meus_vetores, *myvec_original, *enlaces, *saida, *saida_original;
 int *tabela_roteamento[QTD_MAXIMA_ROTEADORES];
 
 int vizinhos[QTD_MAXIMA_ROTEADORES], quantidade_vizinhos = 1;
+
+fila_mensagens fila_entrada, fila_saida;
+pthread_mutex_t mutex_fila_entrada = PTHREAD_MUTEX_INITIALIZER, mutex_fila_saida = PTHREAD_MUTEX_INITIALIZER;
+int tamanho_atual_fila_entrada = 0, tamanho_atual_fila_saida = 0;
 
 int main(int argc, char *argv[])
 {
@@ -694,4 +699,76 @@ void *thread_roteador(void *porta)
         }
     }
     return 0;
+}
+
+/*Add elemento no final da fila*/
+void fila_entrada_add(pacote pacote_novo) {
+    if(tamanho_atual_fila_entrada < QTD_MENSAGENS_MAX_FILA) {
+        pthread_mutex_lock(&mutex_fila_entrada);
+        fila_entrada.mensagens[tamanho_atual_fila_entrada] = pacote_novo;
+        tamanho_atual_fila_entrada++;
+        pthread_mutex_unlock(&mutex_fila_entrada);
+    } else {
+        printf("A fila de entrada não aceitou o pacote com a mensagem: \"%s\" pois ela já está cheia", pacote_novo.message);
+    }
+}
+
+/*Remove elemento do inicio da fila*/
+void fila_entrada_remove() {
+    pthread_mutex_lock(&mutex_fila_entrada);
+    for(int i = 0; i < tamanho_atual_fila_entrada; i++) {
+        fila_entrada.mensagens[i] = fila_entrada.mensagens[i+1];
+    }
+    tamanho_atual_fila_entrada--;
+    pthread_mutex_unlock(&mutex_fila_entrada);
+}
+
+pacote fila_entrada_get() {
+    pthread_mutex_lock(&mutex_fila_entrada);
+    pacote pacote = fila_entrada.mensagens[0];
+    pthread_mutex_unlock(&mutex_fila_entrada);
+    return pacote;
+}
+
+bool fila_entrada_tem_elementos() {
+    pthread_mutex_lock(&mutex_fila_entrada);
+    bool temElementos = (tamanho_atual_fila_entrada > 0) ? true : false;
+    pthread_mutex_unlock(&mutex_fila_entrada);
+    return temElementos;
+}
+
+/*Add elemento no final da fila*/
+void fila_saida_add(pacote pacote_novo) {
+    if(tamanho_atual_fila_saida < QTD_MENSAGENS_MAX_FILA) {
+        pthread_mutex_lock(&mutex_fila_saida);
+        fila_saida.mensagens[tamanho_atual_fila_saida] = pacote_novo;
+        tamanho_atual_fila_saida++;
+        pthread_mutex_unlock(&mutex_fila_saida);
+    } else {
+        printf("A fila de saída não aceitou o pacote com a mensagem: \"%s\" pois ela já está cheia", pacote_novo.message);
+    }
+}
+
+/*Remove elemento do inicio da fila*/
+void fila_saida_remove() {
+    pthread_mutex_lock(&mutex_fila_saida);
+    for(int i = 0; i < tamanho_atual_fila_saida; i++) {
+        fila_saida.mensagens[i] = fila_saida.mensagens[i+1];
+    }
+    tamanho_atual_fila_saida--;
+    pthread_mutex_unlock(&mutex_fila_saida);
+}
+
+pacote fila_saida_get() {
+    pthread_mutex_lock(&mutex_fila_saida);
+    pacote pacote = fila_saida.mensagens[0];
+    pthread_mutex_unlock(&mutex_fila_saida);
+    return pacote;
+}
+
+bool fila_saida_tem_elementos() {
+    pthread_mutex_lock(&mutex_fila_saida);
+    bool temElementos = (tamanho_atual_fila_saida > 0) ? true : false;
+    pthread_mutex_unlock(&mutex_fila_saida);
+    return temElementos;
 }

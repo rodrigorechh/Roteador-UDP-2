@@ -1,3 +1,5 @@
+#include <stdbool.h>
+
 #define BUFLEN 100
 #define QTD_MAXIMA_ROTEADORES 10
 #define DEBUG 1
@@ -9,6 +11,8 @@
 //send type
 #define ROUTE 0
 #define FOWARD 1
+
+#define QTD_MENSAGENS_MAX_FILA 100
 
 typedef struct roteador
 {
@@ -27,6 +31,10 @@ typedef struct pacote
     int ack;
     int sendervec[QTD_MAXIMA_ROTEADORES];
 } pacote;
+
+typedef struct fila_mensagens{
+    pacote mensagens[QTD_MENSAGENS_MAX_FILA];
+} fila_mensagens;
 
 void die(char *s);
 int *copiar_vetor(int vetor[], int tamanho);
@@ -50,3 +58,12 @@ void atualizar_tabela_roteamento();
 void *thread_controle_vec();
 void *thread_terminal();
 void *thread_roteador(void *porta);
+
+void fila_entrada_add(pacote pacote_novo);
+void fila_entrada_remove();
+pacote fila_entrada_get();
+bool fila_entrada_tem_elementos();
+void fila_saida_add(pacote pacote_novo);
+void fila_saida_remove();
+pacote fila_saida_get();
+bool fila_saida_tem_elementos();
