@@ -10,21 +10,23 @@
 #include "headers/structures.h"
 
 struct roteador *roteadores_vizinhos;
-struct sockaddr_in socket_roteador, si_other;
-int *id_roteador_atual;
-pthread_mutex_t timerMutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t tableMutex = PTHREAD_MUTEX_INITIALIZER;
-int sock, seq = 0, confirmacao = 0, tentativa = 0;
-int unlinkRouter[QTD_MAXIMA_ROTEADORES];
-int nodos_rede[QTD_MAXIMA_ROTEADORES], qt_nodos = 0;
-int *meus_vetores, *myvec_original, *enlaces, *saida, *saida_original;
-int *tabela_roteamento[QTD_MAXIMA_ROTEADORES];
+struct sockaddr_in socket_roteador, socket_externo;
 
-int vizinhos[QTD_MAXIMA_ROTEADORES], quantidade_vizinhos = 1;
+int *id_roteador_atual;
+
+pthread_mutex_t mutex_timer = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mutext_tabela_roteamento = PTHREAD_MUTEX_INITIALIZER;
+
+int socket_id, sequencial_pacote = 0, confirmacao = 0, tentativa = 0, qt_nodos = 0, quantidade_vizinhos = 1;
+int unlink_router[QTD_MAXIMA_ROTEADORES];
+int nodos_rede[QTD_MAXIMA_ROTEADORES];
+int *meus_vetores, *meus_vetores_origem, *enlaces, *mapeamento_saida, *saida_original;
+int *tabela_roteamento[QTD_MAXIMA_ROTEADORES];
+int vizinhos[QTD_MAXIMA_ROTEADORES];
 
 int main(int argc, char *argv[])
 {
-    id_roteador_atual = malloc(sizeof(int));
+    inicializa_variaveis_globais();
 
     if (argc < 2)
     {
@@ -37,33 +39,38 @@ int main(int argc, char *argv[])
     if (DEBUG)
         printf("\n\nId do roteador do processo atual é %d\n", *id_roteador_atual);
 
-    saida = malloc(sizeof(int) * QTD_MAXIMA_ROTEADORES);
-    setar_valor_default_tabela_roteamento(QTD_MAXIMA_ROTEADORES);
     mapeia();
-    carregar_links_roteadores(*id_roteador_atual);
+    carregar_links_roteadores();
+    carregar_configuracoes_roteadores(vizinhos);
 
     printar_nodos_rede();
     printar_tabela_roteamento();
-
-    carregar_configuracoes_roteadores(vizinhos);
-
     printar_roteadores_vizinhos();
 
-    pthread_t tids[3];
-
     instanciar_socket();
-
     sleep(2);
 
-    pthread_create(&tids[0], NULL, thread_roteador, (void *)&roteadores_vizinhos[0].porta);
-    pthread_create(&tids[1], NULL, thread_terminal, NULL);
-    pthread_create(&tids[2], NULL, thread_controle_vec, NULL);
-    pthread_join(tids[0], NULL);
-    pthread_join(tids[1], NULL);
-    pthread_join(tids[2], NULL);
+    pthread_t instancia_thread[3];
+    pthread_create(&instancia_thread[0], NULL, thread_roteador, NULL);
+    pthread_create(&instancia_thread[1], NULL, thread_terminal, NULL);
+    pthread_create(&instancia_thread[2], NULL, thread_controle_vetores, NULL);
+    pthread_join(instancia_thread[0], NULL);
+    pthread_join(instancia_thread[1], NULL);
+    pthread_join(instancia_thread[2], NULL);
 
-    close(sock);
-    return (1);
+    close(socket_id);
+
+    return 0;
+}
+
+/**
+ * Método para inicias algumas variáveis globais
+ */
+void inicializa_variaveis_globais()
+{
+    id_roteador_atual = malloc(sizeof(int));
+    mapeamento_saida = malloc(sizeof(int) * QTD_MAXIMA_ROTEADORES);
+    setar_valor_default_tabela_roteamento(QTD_MAXIMA_ROTEADORES);
 }
 
 /**
@@ -78,16 +85,14 @@ void die(char *s)
 /**
  * Método auxiliar para copiar um vator com determinado tamanho
  */
-int *copiar_vetor(int vetor[], int tamanho)
+int *copiar_vetor(int origem[], int tamanho)
 {
-    int *copy = malloc(sizeof(int) * tamanho);
+    int *destino = malloc(sizeof(int) * tamanho);
 
     for (int i = 0; i < tamanho; i++)
-    {
-        copy[i] = vetor[i];
-    }
+        destino[i] = origem[i];
 
-    return copy;
+    return destino;
 }
 
 /**
@@ -100,6 +105,8 @@ int obter_index_por_id_roteador(int id)
         if (nodos_rede[i] == id)
             return i;
     }
+
+    return -1;
 }
 
 /**
@@ -122,23 +129,8 @@ void printar_nodos_rede()
     printf("nodos da rede: ");
 
     for (int i = 0; i < qt_nodos; i++)
-    {
         printf("[%d]", nodos_rede[i]);
-    }
 
-    puts("");
-}
-
-/**
- * 
- */
-void printar_vec(int *vec)
-{
-    printf("vec: ");
-    for (int i = 0; i < qt_nodos; i++)
-    {
-        printf("[%d]", vec[i]);
-    }
     puts("");
 }
 
@@ -148,6 +140,7 @@ void printar_vec(int *vec)
 void printar_tabela_roteamento()
 {
     puts("\n--Tabela de Roteamento--");
+
     for (int i = 0; i < qt_nodos; i++)
     {
         if (tabela_roteamento[i] == NULL)
@@ -169,11 +162,12 @@ void printar_tabela_roteamento()
 
         puts("");
     }
+
     printf("\nsaida: ");
+
     for (int i = 0; i < qt_nodos; i++)
-    {
-        printf("[%d]", saida[i]);
-    }
+        printf("[%d]", mapeamento_saida[i]);
+
     puts("");
 
     printar_vizinhos();
@@ -185,10 +179,10 @@ void printar_tabela_roteamento()
 void printar_vizinhos()
 {
     printf("Vizinhos: ");
+
     for (int i = 1; i < quantidade_vizinhos; i++)
-    {
         printf("[%d]", vizinhos[i]);
-    }
+
     puts("");
 }
 
@@ -259,6 +253,7 @@ void mapeia()
             qt_nodos++;
         }
     }
+
     fclose(file);
 }
 
@@ -266,41 +261,42 @@ void mapeia()
  * Lê e extrai as configurações de enlaces que estão no arquivo
  * Carrega os links entre o roteador atual e vizinhos
  */
-void carregar_links_roteadores(int myid)
+void carregar_links_roteadores()
 {
-    int rot1, rot2, custo;
+    int id_esquerdo, id_direito, custo_enlace;
     meus_vetores = malloc(sizeof(int) * qt_nodos);
-
     memset(meus_vetores, -1, sizeof(int) * qt_nodos);
 
-    meus_vetores[obter_index_por_id_roteador(myid)] = 0;
+    meus_vetores[obter_index_por_id_roteador(*id_roteador_atual)] = 0;
 
-    FILE *file = fopen("configs/enlaces.config", "r");
-    if (!file)
+    FILE *arquivo = fopen("configs/enlaces.config", "r");
+
+    if (!arquivo)
         die("Não foi possível abrir o arquivo de Enlaces");
 
-    vizinhos[0] = myid;
+    vizinhos[0] = *id_roteador_atual;
 
-    while (fscanf(file, "%d %d %d", &rot1, &rot2, &custo) != EOF)
+    while (fscanf(arquivo, "%d %d %d", &id_esquerdo, &id_direito, &custo_enlace) != EOF)
     {
         for (int i = 0; i < qt_nodos; i++)
         {
-            if (rot1 == myid)
+            if (id_esquerdo == (*id_roteador_atual))
             {
-                meus_vetores[obter_index_por_id_roteador(rot2)] = custo;
-                adicionar_vizinho_array(rot2);
+                meus_vetores[obter_index_por_id_roteador(id_direito)] = custo_enlace;
+                adicionar_vizinho_array(id_direito);
             }
-            if (rot2 == myid)
+            if (id_direito == (*id_roteador_atual))
             {
-                meus_vetores[obter_index_por_id_roteador(rot1)] = custo;
-                adicionar_vizinho_array(rot1);
+                meus_vetores[obter_index_por_id_roteador(id_esquerdo)] = custo_enlace;
+                adicionar_vizinho_array(id_esquerdo);
             }
         }
     }
-    fclose(file);
+
+    fclose(arquivo);
 
     setar_valor_default_tabela_roteamento(qt_nodos);
-    tabela_roteamento[obter_index_por_id_roteador(myid)] = meus_vetores;
+    tabela_roteamento[obter_index_por_id_roteador(*id_roteador_atual)] = meus_vetores;
     enlaces = copiar_vetor(meus_vetores, QTD_MAXIMA_ROTEADORES);
 }
 
@@ -314,15 +310,13 @@ void carregar_configuracoes_roteadores(int vizinhos[])
     FILE *file;
     roteadores_vizinhos = malloc(sizeof(struct roteador) * quantidade_vizinhos);
 
-    memset(saida, -1, sizeof(int) * QTD_MAXIMA_ROTEADORES);
+    memset(mapeamento_saida, -1, sizeof(int) * QTD_MAXIMA_ROTEADORES);
 
     for (int i = 1; i < quantidade_vizinhos; i++)
-    {
-        saida[obter_index_por_id_roteador(vizinhos[i])] = vizinhos[i];
-    }
+        mapeamento_saida[obter_index_por_id_roteador(vizinhos[i])] = vizinhos[i];
 
-    saida_original = copiar_vetor(saida, QTD_MAXIMA_ROTEADORES);
-    myvec_original = copiar_vetor(meus_vetores, QTD_MAXIMA_ROTEADORES);
+    saida_original = copiar_vetor(mapeamento_saida, QTD_MAXIMA_ROTEADORES);
+    meus_vetores_origem = copiar_vetor(meus_vetores, QTD_MAXIMA_ROTEADORES);
 
     for (int i = 0; i < quantidade_vizinhos; i++)
     {
@@ -348,7 +342,7 @@ void carregar_configuracoes_roteadores(int vizinhos[])
  */
 void instanciar_socket()
 {
-    if ((sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
+    if ((socket_id = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
     {
         die("socket");
     }
@@ -358,47 +352,50 @@ void instanciar_socket()
     socket_roteador.sin_port = htons(roteadores_vizinhos[0].porta);
     socket_roteador.sin_addr.s_addr = htonl(INADDR_ANY);
 
-    if (bind(sock, (struct sockaddr *)&socket_roteador, sizeof(socket_roteador)) == -1)
+    if (bind(socket_id, (struct sockaddr *)&socket_roteador, sizeof(socket_roteador)) == -1)
     {
         die("bind");
     }
 }
 
 /**
- * 
+ * Método que faz o envio da sua tabela de roteamento para seus vizinhos
  */
 void enviar_meus_vetores()
 {
-    pacote vec_packet;
-    vec_packet.id_font = *id_roteador_atual;
-    vec_packet.type = CONTROL;
-    vec_packet.ack = 0;
+    pacote pacote;
+    pacote.id_font = *id_roteador_atual;
+    pacote.type = CONTROL;
+    pacote.ack = 0;
+
     for (int i = 0; i < qt_nodos; i++)
-        vec_packet.sendervec[i] = meus_vetores[i];
+        pacote.sendervec[i] = meus_vetores[i];
 
     for (int i = 1; i < quantidade_vizinhos; i++)
     {
-        vec_packet.id_dest = vizinhos[i];
-        unlinkRouter[obter_index_por_id_roteador(vec_packet.id_dest)] += 1;
-        enviar_pacote(vec_packet, FOWARD);
+        pacote.id_dest = vizinhos[i];
+        unlink_router[obter_index_por_id_roteador(pacote.id_dest)] += 1;
+        enviar_pacote(pacote, FOWARD);
     }
 }
 
 /**
- * 
+ * Enviar o pacote para o noto de destino
+ * Caso o destino não seja vizinho, busca qual é o próximo
+ * nodo para chegar até o vizinho
  */
 void enviar_pacote(pacote packet, int strategy)
 {
-    int id_next, i, slen = sizeof(si_other);
+    int id_next, i, slen = sizeof(socket_externo);
 
     if (strategy == ROUTE)
     {
-        pthread_mutex_lock(&tableMutex);
-        id_next = saida[obter_index_por_id_roteador(packet.id_dest)];
+        pthread_mutex_lock(&mutext_tabela_roteamento);
+        id_next = mapeamento_saida[obter_index_por_id_roteador(packet.id_dest)];
         printf("\n\npacket.id_dest = %d", packet.id_dest);
         printf("\n\nidx(packet.id_dest) = %d", obter_index_por_id_roteador(packet.id_dest));
         printf("\n\nid_next = %d", id_next);
-        pthread_mutex_unlock(&tableMutex);
+        pthread_mutex_unlock(&mutext_tabela_roteamento);
     }
     else if (strategy == FOWARD)
     {
@@ -420,24 +417,24 @@ void enviar_pacote(pacote packet, int strategy)
     if (strategy != FOWARD)
         printf("...encaminhando via roteador: %d | %s:%d\n", id_next, roteadores_vizinhos[i].ip, roteadores_vizinhos[i].porta);
 
-    memset((char *)&si_other, 0, sizeof(si_other));
-    si_other.sin_family = AF_INET;
-    si_other.sin_port = htons(roteadores_vizinhos[i].porta);
+    memset((char *)&socket_externo, 0, sizeof(socket_externo));
+    socket_externo.sin_family = AF_INET;
+    socket_externo.sin_port = htons(roteadores_vizinhos[i].porta);
 
-    if (inet_aton(roteadores_vizinhos[i].ip, &si_other.sin_addr) == 0)
+    if (inet_aton(roteadores_vizinhos[i].ip, &socket_externo.sin_addr) == 0)
     {
         fprintf(stderr, "inet_aton() failed\n");
         exit(1);
     }
 
-    if (sendto(sock, &packet, sizeof(struct pacote), 0, (struct sockaddr *)&si_other, slen) == -1)
+    if (sendto(socket_id, &packet, sizeof(struct pacote), 0, (struct sockaddr *)&socket_externo, slen) == -1)
     {
         die("sendto()");
     }
 }
 
 /**
- * 
+ * Manipula o pacote de retorno após o envio do pacote
  */
 void verificar_pacote_retorno(pacote packet)
 {
@@ -447,10 +444,11 @@ void verificar_pacote_retorno(pacote packet)
         if (vizinhos[i] == packet.id_font)
             volta = 0;
     }
+
     if (volta)
     {
-        myvec_original[obter_index_por_id_roteador(packet.id_font)] = enlaces[obter_index_por_id_roteador(packet.id_font)];
-        saida[obter_index_por_id_roteador(packet.id_font)] = packet.id_font;
+        meus_vetores_origem[obter_index_por_id_roteador(packet.id_font)] = enlaces[obter_index_por_id_roteador(packet.id_font)];
+        mapeamento_saida[obter_index_por_id_roteador(packet.id_font)] = packet.id_font;
         quantidade_vizinhos++;
         vizinhos[quantidade_vizinhos - 1] = packet.id_font;
     }
@@ -461,17 +459,21 @@ void verificar_pacote_retorno(pacote packet)
  */
 void verificar_enlaces()
 {
-    pthread_mutex_lock(&tableMutex);
+    pthread_mutex_lock(&mutext_tabela_roteamento);
     int mudou = 0;
+
     for (int i = 0; i < qt_nodos; i++)
     {
-        if (unlinkRouter[i] > 2)
+        if (unlink_router[i] > 2)
         {
-            puts("\nverificaEnlaces\n");
-            *(tabela_roteamento[i]) - 1;
-            myvec_original[i] = -1;
-            saida[i] = -1;
-            int *mynewvec = copiar_vetor(myvec_original, qt_nodos);
+            printf("\ni = %d", i);
+            if (tabela_roteamento[i] != NULL)
+                *(tabela_roteamento[i]) = -1;
+            printf("\ni = %d", i);
+            meus_vetores_origem[i] = -1;
+            mapeamento_saida[i] = -1;
+
+            int *mynewvec = copiar_vetor(meus_vetores_origem, qt_nodos);
             tabela_roteamento[obter_index_por_id_roteador(*id_roteador_atual)] = mynewvec;
             mudou = 1;
 
@@ -483,29 +485,34 @@ void verificar_enlaces()
                     {
                         vizinhos[j] = vizinhos[quantidade_vizinhos - 1];
                     }
+
                     quantidade_vizinhos--;
-                    unlinkRouter[i] = 0;
+                    unlink_router[i] = 0;
                 }
             }
         }
     }
-    pthread_mutex_unlock(&tableMutex);
+
+    pthread_mutex_unlock(&mutext_tabela_roteamento);
 
     if (mudou)
         atualizar_tabela_roteamento();
 }
 
 /**
- * 
+ * Método que recalcula a saída de pacotes
+ * A partir do vetor recebido pelos vizinhos
+ * e seus próprios vizinhos, o método determina
+ * qual o próximo vizinho para chegar até outro destino
  */
 void atualizar_tabela_roteamento()
 {
-    pthread_mutex_lock(&tableMutex);
+    pthread_mutex_lock(&mutext_tabela_roteamento);
 
     int *lastvec;
     lastvec = malloc(sizeof(int) * qt_nodos);
     lastvec = copiar_vetor(meus_vetores, QTD_MAXIMA_ROTEADORES);
-    meus_vetores = copiar_vetor(myvec_original, QTD_MAXIMA_ROTEADORES);
+    meus_vetores = copiar_vetor(meus_vetores_origem, QTD_MAXIMA_ROTEADORES);
 
     for (int i = 0; i < qt_nodos; i++)
     {
@@ -520,31 +527,32 @@ void atualizar_tabela_roteamento()
             if (tabela_roteamento[i][j] == -1)
                 continue;
 
-            int novocusto = tabela_roteamento[i][j] + myvec_original[i];
+            int novocusto = tabela_roteamento[i][j] + meus_vetores_origem[i];
             if (novocusto < meus_vetores[j] || meus_vetores[j] == -1)
             {
                 meus_vetores[j] = novocusto;
-                saida[j] = nodos_rede[i];
+                mapeamento_saida[j] = nodos_rede[i];
                 if (novocusto > 52)
                 {
                     printf("Detectado contagem ao infinito, enlace removido!\n");
                     meus_vetores[j] = -1;
-                    saida[j] = -1;
+                    mapeamento_saida[j] = -1;
                 }
             }
         }
     }
 
     meus_vetores[obter_index_por_id_roteador(*id_roteador_atual)] = 0;
-    saida[obter_index_por_id_roteador(*id_roteador_atual)] = -1;
+    mapeamento_saida[obter_index_por_id_roteador(*id_roteador_atual)] = -1;
     tabela_roteamento[obter_index_por_id_roteador(*id_roteador_atual)] = meus_vetores;
+
     for (int j = 0; j < qt_nodos; j++)
     {
         if (tabela_roteamento[obter_index_por_id_roteador(*id_roteador_atual)][j] == -1)
-            saida[j] = -1;
+            mapeamento_saida[j] = -1;
     }
 
-    pthread_mutex_unlock(&tableMutex);
+    pthread_mutex_unlock(&mutext_tabela_roteamento);
     for (int i = 0; i < qt_nodos; i++)
     {
         if (lastvec[i] != meus_vetores[i])
@@ -559,9 +567,11 @@ void atualizar_tabela_roteamento()
 }
 
 /**
- * 
+ * Thread que controla enlaces
+ * Tanto recebido dos vizinhos quanto 
+ * replicar para outros vizinhos
  */
-void *thread_controle_vec()
+void *thread_controle_vetores()
 {
     while (1)
     {
@@ -572,11 +582,11 @@ void *thread_controle_vec()
 }
 
 /**
- * 
+ * Thread que controla o terminar de interação com o usuário
  */
 void *thread_terminal()
 {
-    int i, slen = sizeof(si_other);
+    int i, slen = sizeof(socket_externo);
     pacote packet;
 
     while (1)
@@ -595,35 +605,36 @@ void *thread_terminal()
         __fpurge(stdin);
         fgets(packet.message, 100, stdin);
 
-        packet.seq = ++seq;
+        packet.seq = ++sequencial_pacote;
         packet.type = DATA;
         packet.ack = 0;
         packet.id_font = roteadores_vizinhos[0].id;
 
         enviar_pacote(packet, ROUTE);
-        pthread_mutex_lock(&timerMutex);
+        pthread_mutex_lock(&mutex_timer);
         tentativa = 0, confirmacao = 0;
-        pthread_mutex_unlock(&timerMutex);
+        pthread_mutex_unlock(&mutex_timer);
 
         while (1)
         {
             sleep(10);
-            pthread_mutex_lock(&timerMutex);
+            pthread_mutex_lock(&mutex_timer);
 
             if (tentativa >= 3 || confirmacao)
             {
-                pthread_mutex_unlock(&timerMutex);
+                pthread_mutex_unlock(&mutex_timer);
                 break;
             }
             else if (!confirmacao)
             {
                 printf("Pacote %d não entregue. Tentando novamente", packet.seq);
                 tentativa += 1;
-                pthread_mutex_unlock(&timerMutex);
+                pthread_mutex_unlock(&mutex_timer);
                 enviar_pacote(packet, ROUTE);
             }
         }
-        pthread_mutex_unlock(&timerMutex);
+
+        pthread_mutex_unlock(&mutex_timer);
         tabela_roteamento[obter_index_por_id_roteador(*id_roteador_atual)] = meus_vetores;
     }
 
@@ -631,17 +642,17 @@ void *thread_terminal()
 }
 
 /**
- * 
+ * Thread que controla o recebimento de pacotes
  */
-void *thread_roteador(void *porta)
+void *thread_roteador()
 {
-    int i, slen = sizeof(si_other), recv_len;
+    int i, slen = sizeof(socket_externo), recv_len;
     int id_destino = -1;
     pacote packet;
 
     while (1)
     {
-        if ((recv_len = recvfrom(sock, &packet, sizeof(struct pacote), 0, (struct sockaddr *)&si_other, &slen)) == -1)
+        if ((recv_len = recvfrom(socket_id, &packet, sizeof(struct pacote), 0, (struct sockaddr *)&socket_externo, &slen)) == -1)
         {
             die("recvfrom()");
         }
@@ -651,7 +662,7 @@ void *thread_roteador(void *porta)
         // printf("Pacote Chegado de %d -> Tipo: %s\n", packet.id_font, packet.type);
         if (id_destino != roteadores_vizinhos[0].id)
         {
-            int id_next = saida[obter_index_por_id_roteador(id_destino)];
+            int id_next = mapeamento_saida[obter_index_por_id_roteador(id_destino)];
 
             if (packet.type == DATA)
             {
@@ -672,7 +683,7 @@ void *thread_roteador(void *porta)
             response.id_dest = packet.id_font;
             response.seq = packet.seq;
 
-            printf("Pacote recebido de %s:%d\n", inet_ntoa(si_other.sin_addr), ntohs(si_other.sin_port));
+            printf("Pacote recebido de %s:%d\n", inet_ntoa(socket_externo.sin_addr), ntohs(socket_externo.sin_port));
             printf("Mensagem: %s\n", packet.message);
             puts("Enviando confirmação...");
 
@@ -680,15 +691,15 @@ void *thread_roteador(void *porta)
         }
         else if (id_destino == roteadores_vizinhos[0].id && packet.ack == 1)
         {
-            printf("Confirmação recebida de %s:%d, mensagem #seq:%d\n", inet_ntoa(si_other.sin_addr), ntohs(si_other.sin_port), packet.seq);
-            pthread_mutex_lock(&timerMutex);
+            printf("Confirmação recebida de %s:%d, mensagem #seq:%d\n", inet_ntoa(socket_externo.sin_addr), ntohs(socket_externo.sin_port), packet.seq);
+            pthread_mutex_lock(&mutex_timer);
             confirmacao = 1;
-            pthread_mutex_unlock(&timerMutex);
+            pthread_mutex_unlock(&mutex_timer);
         }
         else if (id_destino == roteadores_vizinhos[0].id && packet.type == CONTROL)
         {
             verificar_pacote_retorno(packet);
-            unlinkRouter[obter_index_por_id_roteador(packet.id_font)] = 0;
+            unlink_router[obter_index_por_id_roteador(packet.id_font)] = 0;
             tabela_roteamento[obter_index_por_id_roteador(packet.id_font)] = copiar_vetor(packet.sendervec, QTD_MAXIMA_ROTEADORES);
             atualizar_tabela_roteamento();
         }
