@@ -7,23 +7,117 @@
 #include <unistd.h>
 #include "headers/structures.h"
 
+/**
+ * Array com a configuração dos roteadores vizinhos
+ * O array tem o tamanho da quantidade de nodos da rede
+ * mas apenas o índices referente aos vizinhos são preenchidos
+ * Por padrão, o primeiro índice possui as configurações do roteador 
+ * do processo atual
+ */
 struct roteador *roteadores_vizinhos;
+
+/**
+ * Instancia do socket do roteador do processo atual
+ * e instância do socket de comunicação externa
+ */
 struct sockaddr_in socket_roteador, socket_externo;
 
+/**
+ * Id do roteador do processo atual
+ */
 int *id_roteador_atual;
 
+/**
+ * Mutex que controla a confirmação da entrega do pacote
+ */
 pthread_mutex_t mutex_timer = PTHREAD_MUTEX_INITIALIZER;
+
+/**
+ * 
+ * Mutex que controla o acesso a tabela de roteamento
+ */
 pthread_mutex_t mutex_tabela_roteamento = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t mutex_fila_entrada = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t mutex_fila_saida = PTHREAD_MUTEX_INITIALIZER;
+
+/**
+ * Mutex que controla o acesso as filas, tanto de entrada
+ * quanto a fila de saída
+ */
+pthread_mutex_t mutex_fila_entrada = PTHREAD_MUTEX_INITIALIZER, mutex_fila_saida = PTHREAD_MUTEX_INITIALIZER;
+
+/**
+ * Filas que armazenam os pacotes pendentes, tanto de entrada
+ * quanto a fila de saída
+ */
 fila_mensagens fila_entrada, fila_saida;
 
+/**
+ * socket_id => identificador do socket atual
+ * sequencial_pacote => controle de identificador de pacotes
+ * confirmacao => auxiliar para controlar se o pacote foi recebido ou não
+ * qt_nodos => controla a quantidade de nodos que a rede possui
+ * quantidade_vizinhos => controla a quantidade de vizinhos que o roteador possui
+ */
 int socket_id, sequencial_pacote = 0, confirmacao = 0, qt_nodos = 0, quantidade_vizinhos = 1;
+
+/**
+ * Armazena os índices aonde a tabela deve desconsiderar para
+ * ser atualizada com novas informações
+ */
 int remover_enlace[QTD_MAXIMA_ROTEADORES];
+
+/**
+ * Array com mapeamento dos nodos da rede
+ * Quando a rede é iniciada, o processo busca a quantidade
+ * de roteadores que estão no arquivo de configuração
+ * Após isso, é feito o mapeamento de índice => id, com isso
+ * o sistema sabe que os arrays de índice, cada índice se refere
+ * a um roteador específico
+ * 
+ * Ex: nodos_rede       = [ 3, 1, 2, 4]
+ *     mapeamento_saida = [-1, 1, 4, 1]
+ * 
+ * Isso significa que para sair do roteador 3 (id do exemplo)
+ * e chegar até o roteador 2 (índice 2), o sistema busca no
+ * mapeamento de saída o índce 2 (roteador 4). Então saindo
+ * de 3 e indo para o 2, o primeiro salto é para o roteador 4
+ */
 int nodos_rede[QTD_MAXIMA_ROTEADORES];
-int *meus_vetores, *meus_vetores_origem, *enlaces, *mapeamento_saida, *saida_original;
+
+/**
+ * A partir do que esta documentando em nodos_rede, o mapeamento
+ * de saída é calculado conforme recebe as tabelas dos vizinhos.
+ * Com isso, esse array esta sempre atualizado com o melhor 
+ * caminhos, sendo necessário apenas buscar pelo índice, e o valor
+ * no índice é o id do roteador que o pacote deve ser enviado
+ * 
+ * mapeamento_saida_original é apenas um array utilizado como
+ * auxiliar durante o processamento do algoritmo de melhor caminho
+ */
+int *mapeamento_saida, *mapeamento_saida_original;
+
+/**
+ * Array que armazena o custo do enlace para cada roteador
+ * 
+ * meus_vetores_original e enlaces são arrays utilizados como
+ * auxiliar durante o processamento do algoritmo de melhor caminho
+ */
+int *meus_vetores, *meus_vetores_original, *enlaces;
+
+/**
+ * Array de duas dimensões que armazena a tabela de roteamento
+ * do roteador atual e dos roteadores recebeidos por seus
+ * vizinhos
+ */
 int *tabela_roteamento[QTD_MAXIMA_ROTEADORES];
+
+/**
+ * Array que armazena os vizinhos diretos do roteador
+ */
 int vizinhos[QTD_MAXIMA_ROTEADORES];
+
+/**
+ * Auxilia no controle de movimentação de pacotes na fila
+ */
 int tamanho_atual_fila_entrada = 0, tamanho_atual_fila_saida = 0;
 
 int main(int argc, char *argv[])
@@ -173,6 +267,7 @@ void printar_tabela_roteamento()
     printf("\n");
 
     printar_vizinhos();
+    printar_meus_vetores();
 }
 
 /**
@@ -184,6 +279,19 @@ void printar_vizinhos()
 
     for (int i = 1; i < quantidade_vizinhos; i++)
         printf("[%d]", vizinhos[i]);
+
+    printf("\n");
+}
+
+/**
+ * Printa o array de vetores
+ */
+void printar_meus_vetores()
+{
+    printf("Meus vetores: ");
+
+    for (int i = 1; i < qt_nodos; i++)
+        printf("[%d]", meus_vetores[i]);
 
     printf("\n");
 }
@@ -322,8 +430,8 @@ void carregar_configuracoes_roteadores(int vizinhos[])
     for (int i = 1; i < quantidade_vizinhos; i++)
         mapeamento_saida[obter_index_por_id_roteador(vizinhos[i])] = vizinhos[i];
 
-    saida_original = copiar_vetor(mapeamento_saida, QTD_MAXIMA_ROTEADORES);
-    meus_vetores_origem = copiar_vetor(meus_vetores, QTD_MAXIMA_ROTEADORES);
+    mapeamento_saida_original = copiar_vetor(mapeamento_saida, QTD_MAXIMA_ROTEADORES);
+    meus_vetores_original = copiar_vetor(meus_vetores, QTD_MAXIMA_ROTEADORES);
 
     for (int i = 0; i < quantidade_vizinhos; i++)
     {
@@ -452,7 +560,7 @@ void verificar_pacote_retorno(pacote packet)
     if (!is_retorno)
         return;
 
-    meus_vetores_origem[obter_index_por_id_roteador(packet.id_origem)] = enlaces[obter_index_por_id_roteador(packet.id_origem)];
+    meus_vetores_original[obter_index_por_id_roteador(packet.id_origem)] = enlaces[obter_index_por_id_roteador(packet.id_origem)];
     mapeamento_saida[obter_index_por_id_roteador(packet.id_origem)] = packet.id_origem;
     quantidade_vizinhos++;
     vizinhos[quantidade_vizinhos - 1] = packet.id_origem;
@@ -472,10 +580,10 @@ void verificar_enlaces()
         {
             if (tabela_roteamento[i] != NULL)
                 *(tabela_roteamento[i]) = VAZIO;
-            meus_vetores_origem[i] = VAZIO;
+            meus_vetores_original[i] = VAZIO;
             mapeamento_saida[i] = VAZIO;
 
-            int *novo_vetor = copiar_vetor(meus_vetores_origem, qt_nodos);
+            int *novo_vetor = copiar_vetor(meus_vetores_original, qt_nodos);
             tabela_roteamento[obter_index_por_id_roteador(*id_roteador_atual)] = novo_vetor;
             is_ocorreu_mudanca = 1;
 
@@ -513,7 +621,7 @@ void atualizar_tabela_roteamento()
 
     int *vetor_antes_modificacao = malloc(sizeof(int) * qt_nodos);
     vetor_antes_modificacao = copiar_vetor(meus_vetores, QTD_MAXIMA_ROTEADORES);
-    meus_vetores = copiar_vetor(meus_vetores_origem, QTD_MAXIMA_ROTEADORES);
+    meus_vetores = copiar_vetor(meus_vetores_original, QTD_MAXIMA_ROTEADORES);
 
     for (int i = 0; i < qt_nodos; i++)
     {
@@ -528,7 +636,7 @@ void atualizar_tabela_roteamento()
             if (tabela_roteamento[i][j] == VAZIO)
                 continue;
 
-            int novo_custo = tabela_roteamento[i][j] + meus_vetores_origem[i];
+            int novo_custo = tabela_roteamento[i][j] + meus_vetores_original[i];
             if (novo_custo < meus_vetores[j] || meus_vetores[j] == VAZIO)
             {
                 meus_vetores[j] = novo_custo;

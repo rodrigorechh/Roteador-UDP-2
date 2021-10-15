@@ -43,6 +43,7 @@ void printar_roteadores_vizinhos();
 void printar_nodos_rede();
 void printar_tabela_roteamento();
 void printar_vizinhos();
+void printar_meus_vetores();
 void adicionar_vizinho_array(int id);
 void setar_valor_default_tabela_roteamento(int quantidade_indices);
 void carregar_links_roteadores();
