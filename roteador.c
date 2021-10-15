@@ -108,7 +108,7 @@ int obter_index_por_id_roteador(int id)
             return i;
     }
 
-    return -1;
+    return VAZIO;
 }
 
 /**
@@ -151,7 +151,7 @@ void printar_tabela_roteamento()
             continue;
         }
 
-        if (*(tabela_roteamento[i]) == -1)
+        if (*(tabela_roteamento[i]) == VAZIO)
         {
             puts("N/A");
             continue;
@@ -225,7 +225,7 @@ void carregar_links_roteadores()
 {
     int id_esquerdo, id_direito, custo_enlace;
     meus_vetores = malloc(sizeof(int) * QTD_MAXIMA_ROTEADORES);
-    memset(meus_vetores, -1, sizeof(int) * QTD_MAXIMA_ROTEADORES);
+    memset(meus_vetores, VAZIO, sizeof(int) * QTD_MAXIMA_ROTEADORES);
 
     meus_vetores[obter_index_por_id_roteador(*id_roteador_atual)] = 0;
 
@@ -312,7 +312,7 @@ void carregar_configuracoes_roteadores(int vizinhos[])
     FILE *file;
     roteadores_vizinhos = malloc(sizeof(struct roteador) * quantidade_vizinhos);
 
-    memset(mapeamento_saida, -1, sizeof(int) * QTD_MAXIMA_ROTEADORES);
+    memset(mapeamento_saida, VAZIO, sizeof(int) * QTD_MAXIMA_ROTEADORES);
 
     for (int i = 1; i < quantidade_vizinhos; i++)
         mapeamento_saida[obter_index_por_id_roteador(vizinhos[i])] = vizinhos[i];
@@ -401,7 +401,7 @@ void enviar_pacote(pacote packet, int strategy)
         id_next = packet.id_dest;
     }
 
-    if (id_next == -1)
+    if (id_next == VAZIO)
     {
         puts("DESTINO INALCANÇÁVEL");
         return;
@@ -467,10 +467,10 @@ void verificar_enlaces()
         {
             printf("\ni = %d", i);
             if (tabela_roteamento[i] != NULL)
-                *(tabela_roteamento[i]) = -1;
+                *(tabela_roteamento[i]) = VAZIO;
             printf("\ni = %d", i);
-            meus_vetores_origem[i] = -1;
-            mapeamento_saida[i] = -1;
+            meus_vetores_origem[i] = VAZIO;
+            mapeamento_saida[i] = VAZIO;
 
             int *mynewvec = copiar_vetor(meus_vetores_origem, qt_nodos);
             tabela_roteamento[obter_index_por_id_roteador(*id_roteador_atual)] = mynewvec;
@@ -518,37 +518,37 @@ void atualizar_tabela_roteamento()
         if (!tabela_roteamento[i])
             continue;
 
-        if (i == obter_index_por_id_roteador(*id_roteador_atual) || *(tabela_roteamento[i]) == -1)
+        if (i == obter_index_por_id_roteador(*id_roteador_atual) || *(tabela_roteamento[i]) == VAZIO)
             continue;
 
         for (int j = 0; j < qt_nodos; j++)
         {
-            if (tabela_roteamento[i][j] == -1)
+            if (tabela_roteamento[i][j] == VAZIO)
                 continue;
 
             int novocusto = tabela_roteamento[i][j] + meus_vetores_origem[i];
-            if (novocusto < meus_vetores[j] || meus_vetores[j] == -1)
+            if (novocusto < meus_vetores[j] || meus_vetores[j] == VAZIO)
             {
                 meus_vetores[j] = novocusto;
                 mapeamento_saida[j] = nodos_rede[i];
                 if (novocusto > 52)
                 {
                     printf("Detectado contagem ao infinito, enlace removido!\n");
-                    meus_vetores[j] = -1;
-                    mapeamento_saida[j] = -1;
+                    meus_vetores[j] = VAZIO;
+                    mapeamento_saida[j] = VAZIO;
                 }
             }
         }
     }
 
     meus_vetores[obter_index_por_id_roteador(*id_roteador_atual)] = 0;
-    mapeamento_saida[obter_index_por_id_roteador(*id_roteador_atual)] = -1;
+    mapeamento_saida[obter_index_por_id_roteador(*id_roteador_atual)] = VAZIO;
     tabela_roteamento[obter_index_por_id_roteador(*id_roteador_atual)] = meus_vetores;
 
     for (int j = 0; j < qt_nodos; j++)
     {
-        if (tabela_roteamento[obter_index_por_id_roteador(*id_roteador_atual)][j] == -1)
-            mapeamento_saida[j] = -1;
+        if (tabela_roteamento[obter_index_por_id_roteador(*id_roteador_atual)][j] == VAZIO)
+            mapeamento_saida[j] = VAZIO;
     }
 
     pthread_mutex_unlock(&mutext_tabela_roteamento);
@@ -646,7 +646,7 @@ void *thread_terminal()
 void *thread_roteador()
 {
     int i, slen = sizeof(socket_externo), recv_len;
-    int id_destino = -1;
+    int id_destino = VAZIO;
     pacote packet;
 
     while (1)
