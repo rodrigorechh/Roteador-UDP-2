@@ -236,6 +236,7 @@ void carregar_links_roteadores()
 
     vizinhos[0] = *id_roteador_atual;
 
+    int controle_indice_nodos = 0;
     while (fscanf(arquivo, "%d %d %d", &id_esquerdo, &id_direito, &custo_enlace) != EOF)
     {
         int aux_id_esquerdo = 1;
@@ -250,9 +251,16 @@ void carregar_links_roteadores()
         }
 
         if (aux_id_esquerdo)
-            nodos_rede[qt_nodos] = id_esquerdo;
+        {
+            nodos_rede[controle_indice_nodos] = id_esquerdo;
+            controle_indice_nodos++;
+        }
+
         if (aux_id_direito)
-            nodos_rede[qt_nodos] = id_direito;
+        {
+            nodos_rede[controle_indice_nodos] = id_direito;
+            controle_indice_nodos++;
+        }
 
         for (int i = 0; i < qt_nodos; i++)
         {
@@ -271,7 +279,7 @@ void carregar_links_roteadores()
     }
 
     fclose(arquivo);
-
+    printar_nodos_rede();
     setar_valor_default_tabela_roteamento(qt_nodos);
     tabela_roteamento[obter_index_por_id_roteador(*id_roteador_atual)] = meus_vetores;
     enlaces = copiar_vetor(meus_vetores, QTD_MAXIMA_ROTEADORES);
@@ -384,6 +392,14 @@ void enviar_pacote(pacote packet, int comportamento)
 {
     int id_vizinho_encaminhar_pacote, i, tamanho_socket = sizeof(socket_externo);
 
+    if (DEBUG)
+    {
+        if (comportamento == COMPORTAMENTO_PACOTE_ROTEAMENTO)
+            printf("Enviando pacote com finalidade de roteamento de pacote\n");
+        else
+            printf("Enviando pacote com finalidade de compartilhamento de tabela\n");
+    }
+
     if (comportamento == COMPORTAMENTO_PACOTE_ROTEAMENTO)
     {
         pthread_mutex_lock(&mutex_tabela_roteamento);
@@ -454,7 +470,6 @@ void verificar_enlaces()
     {
         if (remover_enlace[i] > 2)
         {
-            ;
             if (tabela_roteamento[i] != NULL)
                 *(tabela_roteamento[i]) = VAZIO;
             meus_vetores_origem[i] = VAZIO;
@@ -647,7 +662,10 @@ void *thread_roteador()
 
         id_destino = packet.id_destino;
         sleep(1);
-        // printf("Pacote Chegado de %d -> Tipo: %s\n", packet.id_origem, packet.type);
+
+        if (DEBUG)
+            printf("Pacote recebido de %d\n", packet.id_origem);
+
         if (id_destino != roteadores_vizinhos[0].id)
         {
             int id_next = mapeamento_saida[obter_index_por_id_roteador(id_destino)];
