@@ -1,17 +1,17 @@
 #define BUFLEN 100
 #define QTD_MAXIMA_ROTEADORES 10
+#define QTD_MENSAGENS_MAX_FILA 100
 #define DEBUG 1
 #define VAZIO -1
+#define CUSTO_MAXIMO_CONTAGEM_INFINITO 52
 
-// packet types
-#define DATA 0
-#define CONTROL 1
+#define TIMEOUT_COMPARTILHAMENTO_TABELA_ROTEAMENTOS 30
 
-//send type
-#define ROUTE 0
-#define FOWARD 1
+#define TIPO_PACOTE_DADO 0
+#define TIPO_PACOTE_CONTROLE 1
 
-#define QTD_MENSAGENS_MAX_FILA 100
+#define COMPORTAMENTO_PACOTE_ROTEAMENTO 0
+#define COMPORTAMENTO_PACOTE_TABELA 1
 
 typedef struct roteador
 {
@@ -22,13 +22,13 @@ typedef struct roteador
 
 typedef struct pacote
 {
-    int id_dest;
-    int id_font;
-    int seq;
-    char message[150];
-    int type;
-    int ack;
-    int sendervec[QTD_MAXIMA_ROTEADORES];
+    int id_destino;
+    int id_origem;
+    int sequencia;
+    char conteudo[150];
+    int tipo;
+    int confirmacao;
+    int vetores_tabela_roteamento[QTD_MAXIMA_ROTEADORES];
 } pacote;
 
 typedef struct fila_mensagens{
