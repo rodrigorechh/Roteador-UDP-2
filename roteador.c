@@ -3,10 +3,8 @@
 #include <stdlib.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <pthread.h>
 #include <unistd.h>
-#include <stdio_ext.h>
 #include "headers/structures.h"
 
 struct roteador *roteadores_vizinhos;
@@ -17,7 +15,7 @@ int *id_roteador_atual;
 pthread_mutex_t mutex_timer = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutext_tabela_roteamento = PTHREAD_MUTEX_INITIALIZER;
 
-int socket_id, sequencial_pacote = 0, confirmacao = 0, tentativa = 0, qt_nodos = 0, quantidade_vizinhos = 1;
+int socket_id, sequencial_pacote = 0, confirmacao = 0, qt_nodos = 0, quantidade_vizinhos = 1;
 int unlink_router[QTD_MAXIMA_ROTEADORES];
 int nodos_rede[QTD_MAXIMA_ROTEADORES];
 int *meus_vetores, *meus_vetores_origem, *enlaces, *mapeamento_saida, *saida_original;
@@ -43,7 +41,7 @@ int main(int argc, char *argv[])
     if (DEBUG)
         printf("\n\nId do roteador do processo atual é %d\n", *id_roteador_atual);
 
-    mapeia();
+    carregar_quantidade_nodos();
     carregar_links_roteadores();
     carregar_configuracoes_roteadores(vizinhos);
 
@@ -135,7 +133,7 @@ void printar_nodos_rede()
     for (int i = 0; i < qt_nodos; i++)
         printf("[%d]", nodos_rede[i]);
 
-    puts("");
+    printf("\n");
 }
 
 /**
@@ -164,7 +162,7 @@ void printar_tabela_roteamento()
             printf("[%d]", tabela_roteamento[i][j]);
         }
 
-        puts("");
+        printf("\n");
     }
 
     printf("\nsaida: ");
@@ -172,7 +170,7 @@ void printar_tabela_roteamento()
     for (int i = 0; i < qt_nodos; i++)
         printf("[%d]", mapeamento_saida[i]);
 
-    puts("");
+    printf("\n");
 
     printar_vizinhos();
 }
@@ -187,7 +185,7 @@ void printar_vizinhos()
     for (int i = 1; i < quantidade_vizinhos; i++)
         printf("[%d]", vizinhos[i]);
 
-    puts("");
+    printf("\n");
 }
 
 /**
@@ -221,55 +219,13 @@ void setar_valor_default_tabela_roteamento(int quantidade_indices)
 
 /**
  * Lê e extrai as configurações de enlaces que estão no arquivo
- * Apenas carrega os ids encontrados no arquivo e adiciona no array nodos_rede
- */
-void mapeia()
-{
-    int rot1, rot2, custo;
-    int r1_n, r2_n;
-
-    FILE *file = fopen("configs/enlaces.config", "r");
-    if (!file)
-        die("Não foi possível abrir o arquivo de Enlaces");
-
-    while (fscanf(file, "%d %d %d", &rot1, &rot2, &custo) != EOF)
-    {
-        int r1_n = r2_n = 1;
-        for (int i = 0; i < qt_nodos; i++)
-        {
-            if (rot1 == nodos_rede[i])
-            {
-                r1_n = 0;
-            }
-            else if (rot2 == nodos_rede[i])
-            {
-                r2_n = 0;
-            }
-        }
-        if (r1_n)
-        {
-            nodos_rede[qt_nodos] = rot1;
-            qt_nodos++;
-        }
-        if (r2_n)
-        {
-            nodos_rede[qt_nodos] = rot2;
-            qt_nodos++;
-        }
-    }
-
-    fclose(file);
-}
-
-/**
- * Lê e extrai as configurações de enlaces que estão no arquivo
  * Carrega os links entre o roteador atual e vizinhos
  */
 void carregar_links_roteadores()
 {
     int id_esquerdo, id_direito, custo_enlace;
-    meus_vetores = malloc(sizeof(int) * qt_nodos);
-    memset(meus_vetores, -1, sizeof(int) * qt_nodos);
+    meus_vetores = malloc(sizeof(int) * QTD_MAXIMA_ROTEADORES);
+    memset(meus_vetores, -1, sizeof(int) * QTD_MAXIMA_ROTEADORES);
 
     meus_vetores[obter_index_por_id_roteador(*id_roteador_atual)] = 0;
 
@@ -282,6 +238,22 @@ void carregar_links_roteadores()
 
     while (fscanf(arquivo, "%d %d %d", &id_esquerdo, &id_direito, &custo_enlace) != EOF)
     {
+        int aux_id_esquerdo = 1;
+        int aux_id_direito = 1;
+
+        for (int i = 0; i < qt_nodos; i++)
+        {
+            if (id_esquerdo == nodos_rede[i])
+                aux_id_esquerdo = 0;
+            else if (id_direito == nodos_rede[i])
+                aux_id_direito = 0;
+        }
+
+        if (aux_id_esquerdo)
+            nodos_rede[qt_nodos] = id_esquerdo;
+        if (aux_id_direito)
+            nodos_rede[qt_nodos] = id_direito;
+
         for (int i = 0; i < qt_nodos; i++)
         {
             if (id_esquerdo == (*id_roteador_atual))
@@ -289,6 +261,7 @@ void carregar_links_roteadores()
                 meus_vetores[obter_index_por_id_roteador(id_direito)] = custo_enlace;
                 adicionar_vizinho_array(id_direito);
             }
+
             if (id_direito == (*id_roteador_atual))
             {
                 meus_vetores[obter_index_por_id_roteador(id_esquerdo)] = custo_enlace;
@@ -302,6 +275,31 @@ void carregar_links_roteadores()
     setar_valor_default_tabela_roteamento(qt_nodos);
     tabela_roteamento[obter_index_por_id_roteador(*id_roteador_atual)] = meus_vetores;
     enlaces = copiar_vetor(meus_vetores, QTD_MAXIMA_ROTEADORES);
+}
+
+/**
+ * Lê e extrai as configurações de roteadores que estão no arquivo
+ * apenas para contar a quanitdade de nodos pré configurados na rede
+ */
+void carregar_quantidade_nodos()
+{
+    FILE *arquivo = fopen("configs/roteador.config", "r");
+    int aux1, aux2;
+    char aux3[32];
+
+    if (!arquivo)
+        die("Não foi possível abrir o arquivo de Roteadores");
+
+    while (fscanf(arquivo, "%d %d %s", &aux1, &aux2, aux3) != EOF)
+    {
+        qt_nodos++;
+    }
+
+    fclose(arquivo);
+
+    if (DEBUG)
+        printf("A rede esta pré configurada com %d roteadores\n", qt_nodos);
+
 }
 
 /**
@@ -396,9 +394,6 @@ void enviar_pacote(pacote packet, int strategy)
     {
         pthread_mutex_lock(&mutext_tabela_roteamento);
         id_next = mapeamento_saida[obter_index_por_id_roteador(packet.id_dest)];
-        printf("\n\npacket.id_dest = %d", packet.id_dest);
-        printf("\n\nidx(packet.id_dest) = %d", obter_index_por_id_roteador(packet.id_dest));
-        printf("\n\nid_next = %d", id_next);
         pthread_mutex_unlock(&mutext_tabela_roteamento);
     }
     else if (strategy == FOWARD)
@@ -581,7 +576,7 @@ void *thread_controle_vetores()
     {
         verificar_enlaces();
         enviar_meus_vetores();
-        sleep(30);
+        sleep(5);
     }
 }
 
@@ -597,16 +592,16 @@ void *thread_terminal()
     {
         while (1)
         {
-            printf("Enter router id:\n");
+            printf("Digite o destino da mensagem:\n");
             scanf("%d", &packet.id_dest);
             if (packet.id_dest == roteadores_vizinhos[0].id)
-                printf("Destino não alcançável, tente novamente.\n");
+                printf("O destino não é alcançável\n");
             else
                 break;
         }
 
-        printf("Enter message: ");
-        __fpurge(stdin);
+        getchar();
+        printf("Digite a mensagem para o destino %d: ", packet.id_dest);
         fgets(packet.message, 100, stdin);
 
         packet.seq = ++sequencial_pacote;
@@ -615,8 +610,9 @@ void *thread_terminal()
         packet.id_font = roteadores_vizinhos[0].id;
 
         enviar_pacote(packet, ROUTE);
+
         pthread_mutex_lock(&mutex_timer);
-        tentativa = 0, confirmacao = 0;
+        confirmacao = 0;
         pthread_mutex_unlock(&mutex_timer);
 
         while (1)
@@ -624,15 +620,14 @@ void *thread_terminal()
             sleep(10);
             pthread_mutex_lock(&mutex_timer);
 
-            if (tentativa >= 3 || confirmacao)
+            if (confirmacao)
             {
                 pthread_mutex_unlock(&mutex_timer);
                 break;
             }
-            else if (!confirmacao)
+            else
             {
                 printf("Pacote %d não entregue. Tentando novamente", packet.seq);
-                tentativa += 1;
                 pthread_mutex_unlock(&mutex_timer);
                 enviar_pacote(packet, ROUTE);
             }
@@ -712,35 +707,43 @@ void *thread_roteador()
 }
 
 /*Add elemento no final da fila*/
-void fila_entrada_add(pacote pacote_novo) {
-    if(tamanho_atual_fila_entrada < QTD_MENSAGENS_MAX_FILA) {
+void fila_entrada_add(pacote pacote_novo)
+{
+    if (tamanho_atual_fila_entrada < QTD_MENSAGENS_MAX_FILA)
+    {
         pthread_mutex_lock(&mutex_fila_entrada);
         fila_entrada.mensagens[tamanho_atual_fila_entrada] = pacote_novo;
         tamanho_atual_fila_entrada++;
         pthread_mutex_unlock(&mutex_fila_entrada);
-    } else {
+    }
+    else
+    {
         printf("A fila de entrada não aceitou o pacote com a mensagem: \"%s\" pois ela já está cheia", pacote_novo.message);
     }
 }
 
 /*Remove elemento do inicio da fila*/
-void fila_entrada_remove() {
+void fila_entrada_remove()
+{
     pthread_mutex_lock(&mutex_fila_entrada);
-    for(int i = 0; i < tamanho_atual_fila_entrada; i++) {
-        fila_entrada.mensagens[i] = fila_entrada.mensagens[i+1];
+    for (int i = 0; i < tamanho_atual_fila_entrada; i++)
+    {
+        fila_entrada.mensagens[i] = fila_entrada.mensagens[i + 1];
     }
     tamanho_atual_fila_entrada--;
     pthread_mutex_unlock(&mutex_fila_entrada);
 }
 
-pacote fila_entrada_get() {
+pacote fila_entrada_get()
+{
     pthread_mutex_lock(&mutex_fila_entrada);
     pacote pacote = fila_entrada.mensagens[0];
     pthread_mutex_unlock(&mutex_fila_entrada);
     return pacote;
 }
 
-int fila_entrada_tem_elementos() {
+int fila_entrada_tem_elementos()
+{
     pthread_mutex_lock(&mutex_fila_entrada);
     int temElementos = (tamanho_atual_fila_entrada > 0) ? 1 : 0;
     pthread_mutex_unlock(&mutex_fila_entrada);
@@ -748,35 +751,43 @@ int fila_entrada_tem_elementos() {
 }
 
 /*Add elemento no final da fila*/
-void fila_saida_add(pacote pacote_novo) {
-    if(tamanho_atual_fila_saida < QTD_MENSAGENS_MAX_FILA) {
+void fila_saida_add(pacote pacote_novo)
+{
+    if (tamanho_atual_fila_saida < QTD_MENSAGENS_MAX_FILA)
+    {
         pthread_mutex_lock(&mutex_fila_saida);
         fila_saida.mensagens[tamanho_atual_fila_saida] = pacote_novo;
         tamanho_atual_fila_saida++;
         pthread_mutex_unlock(&mutex_fila_saida);
-    } else {
+    }
+    else
+    {
         printf("A fila de saída não aceitou o pacote com a mensagem: \"%s\" pois ela já está cheia", pacote_novo.message);
     }
 }
 
 /*Remove elemento do inicio da fila*/
-void fila_saida_remove() {
+void fila_saida_remove()
+{
     pthread_mutex_lock(&mutex_fila_saida);
-    for(int i = 0; i < tamanho_atual_fila_saida; i++) {
-        fila_saida.mensagens[i] = fila_saida.mensagens[i+1];
+    for (int i = 0; i < tamanho_atual_fila_saida; i++)
+    {
+        fila_saida.mensagens[i] = fila_saida.mensagens[i + 1];
     }
     tamanho_atual_fila_saida--;
     pthread_mutex_unlock(&mutex_fila_saida);
 }
 
-pacote fila_saida_get() {
+pacote fila_saida_get()
+{
     pthread_mutex_lock(&mutex_fila_saida);
     pacote pacote = fila_saida.mensagens[0];
     pthread_mutex_unlock(&mutex_fila_saida);
     return pacote;
 }
 
-int fila_saida_tem_elementos() {
+int fila_saida_tem_elementos()
+{
     pthread_mutex_lock(&mutex_fila_saida);
     int temElementos = (tamanho_atual_fila_saida > 0) ? 1 : 0;
     pthread_mutex_unlock(&mutex_fila_saida);
