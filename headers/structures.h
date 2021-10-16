@@ -1,7 +1,7 @@
 #define BUFLEN 100
 #define QTD_MAXIMA_ROTEADORES 10
 #define QTD_MENSAGENS_MAX_FILA 100
-#define DEBUG 1
+#define DEBUG 0
 #define VAZIO -1
 #define CUSTO_MAXIMO_CONTAGEM_INFINITO 52
 
@@ -31,8 +31,15 @@ typedef struct pacote
     int vetores_tabela_roteamento[QTD_MAXIMA_ROTEADORES];
 } pacote;
 
+typedef struct mensagem
+{
+    pacote pacote;
+    struct sockaddr_in socket_externo;
+    int comportamento;
+} mensagem;//struct trocada entre receiver, sender e package_handler.
+
 typedef struct fila_mensagens{
-    pacote mensagens[QTD_MENSAGENS_MAX_FILA];
+    mensagem mensagens[QTD_MENSAGENS_MAX_FILA];
 } fila_mensagens;
 
 void die(char *s);
@@ -51,18 +58,20 @@ void carregar_quantidade_nodos();
 void carregar_configuracoes_roteadores(int vizinhos[]);
 void instanciar_socket();
 void enviar_meus_vetores();
-void enviar_pacote(pacote packet, int strategy);
 void verificar_pacote_retorno(pacote packet);
 void verificar_enlaces();
 void atualizar_tabela_roteamento();
+void *thread_receiver();
+void *thread_sender();
+void *thread_packet_handler();
 void *thread_controle_vetores();
 void *thread_terminal();
 void *thread_roteador();
-void fila_entrada_add(pacote pacote_novo);
+void fila_entrada_add(mensagem mensagem_nova);
 void fila_entrada_remove();
-pacote fila_entrada_get();
+mensagem fila_entrada_get();
 int fila_entrada_tem_elementos();
-void fila_saida_add(pacote pacote_novo);
+void fila_saida_add(mensagem mensagem_nova);
 void fila_saida_remove();
-pacote fila_saida_get();
+mensagem fila_saida_get();
 int fila_saida_tem_elementos();
