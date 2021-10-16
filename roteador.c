@@ -210,11 +210,15 @@ int obter_index_por_id_roteador(int id)
  */
 void printar_roteadores_vizinhos()
 {
-    puts("---------------------------------");
-    printf("| id:%d %s:%d\n| Vizinhos:\n", roteadores_vizinhos[0].id, roteadores_vizinhos[0].ip, roteadores_vizinhos[0].porta);
+    printf("\n\n.::INFORMAÇÕES BÁSICAS::.\n");
+
+    printf("Id roteador: %d - ip %s:%d\n", roteadores_vizinhos[0].id, roteadores_vizinhos[0].ip, roteadores_vizinhos[0].porta);
+
+    printf("Roteadores vizinhos:\n");
     for (int i = 1; i < quantidade_vizinhos; i++)
-        printf("| id:%d | %s:%d\n", roteadores_vizinhos[i].id, roteadores_vizinhos[i].ip, roteadores_vizinhos[i].porta);
-    puts("---------------------------------");
+        printf("Id roteador: %d - ip %s:%d\n", roteadores_vizinhos[i].id, roteadores_vizinhos[i].ip, roteadores_vizinhos[i].porta);
+
+    printf("\n\n");
 }
 
 /**
@@ -222,10 +226,12 @@ void printar_roteadores_vizinhos()
  */
 void printar_nodos_rede()
 {
-    printf("nodos da rede: ");
+    printf("\n\n.::NODOS DA REDE::.\n");
 
+    printf("[");
     for (int i = 0; i < qt_nodos; i++)
-        printf("[%d]", nodos_rede[i]);
+        printf("%d, ", nodos_rede[i]);
+    printf("]\n");
 
     printf("\n");
 }
@@ -235,36 +241,30 @@ void printar_nodos_rede()
  */
 void printar_tabela_roteamento()
 {
-    puts("\n--Tabela de Roteamento--");
+    printf("\n\n.::TABELA DE ROTEAMENTO::.\n");
 
     for (int i = 0; i < qt_nodos; i++)
     {
-        if (tabela_roteamento[i] == NULL)
+        printf("\nId %d: ", nodos_rede[i]);
+
+        if (tabela_roteamento[i] == NULL || *(tabela_roteamento[i]) == VAZIO)
         {
-            puts("N/A");
+            printf(" --Sem tabela");
             continue;
         }
 
-        if (*(tabela_roteamento[i]) == VAZIO)
-        {
-            puts("N/A");
-            continue;
-        }
-
+        printf("[");
         for (int j = 0; j < qt_nodos; j++)
-        {
-            printf("[%d]", tabela_roteamento[i][j]);
-        }
-
-        printf("\n");
+            printf("%d, ", tabela_roteamento[i][j]);
+        printf("]");
     }
 
-    printf("\nsaida: ");
+    printf("\n\n.::MAPEAMENTO DE SAÍDA::.\n");
 
+    printf("[");
     for (int i = 0; i < qt_nodos; i++)
-        printf("[%d]", mapeamento_saida[i]);
-
-    printf("\n");
+        printf("%d, ", mapeamento_saida[i]);
+    printf("]\n");
 
     printar_vizinhos();
     printar_meus_vetores();
@@ -275,12 +275,12 @@ void printar_tabela_roteamento()
  */
 void printar_vizinhos()
 {
-    printf("Vizinhos: ");
+    printf("\n\n.::VIZINHOS::.\n");
 
-    for (int i = 1; i < quantidade_vizinhos; i++)
-        printf("[%d]", vizinhos[i]);
-
-    printf("\n");
+    printf("[");
+    for (int i = 0; i < quantidade_vizinhos; i++)
+        printf("%d, ", vizinhos[i]);
+    printf("]\n");
 }
 
 /**
@@ -288,12 +288,12 @@ void printar_vizinhos()
  */
 void printar_meus_vetores()
 {
-    printf("Meus vetores: ");
+    printf("\n\n.::MEU VETORES::.\n");
 
-    for (int i = 1; i < qt_nodos; i++)
-        printf("[%d]", meus_vetores[i]);
-
-    printf("\n");
+    printf("[");
+    for (int i = 0; i < qt_nodos; i++)
+        printf("%d, ", meus_vetores[i]);
+    printf("]\n");
 }
 
 /**
@@ -669,6 +669,7 @@ void atualizar_tabela_roteamento()
         {
             if (DEBUG)
                 printf("\n\nTabela de roteamento foi atualizada ");
+                
             printar_tabela_roteamento();
             enviar_meus_vetores();
 
