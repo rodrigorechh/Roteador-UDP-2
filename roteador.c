@@ -5,7 +5,7 @@
 #include <sys/socket.h>
 #include <pthread.h>
 #include <unistd.h>
-#include "headers/structures.h"
+#include "structures.h"
 
 /**
  * Array com a configuração dos roteadores vizinhos
@@ -158,6 +158,7 @@ int main(int argc, char *argv[])
     pthread_join(instancia_thread[2], NULL);
     pthread_join(instancia_thread[3], NULL);
     pthread_join(instancia_thread[4], NULL);
+
     close(socket_id);
 
     return 0;
@@ -176,9 +177,9 @@ void inicializa_variaveis_globais()
 /**
  * Método para encerar processamento
  */
-void die(char *s)
+void die(char *texto)
 {
-    perror(s);
+    perror(texto);
     exit(1);
 }
 
@@ -341,7 +342,7 @@ void carregar_links_roteadores()
 
     meus_vetores[obter_index_por_id_roteador(*id_roteador_atual)] = 0;
 
-    FILE *arquivo = fopen("configs/enlaces.config", "r");
+    FILE *arquivo = fopen("enlaces.config", "r");
 
     if (!arquivo)
         die("Não foi possível abrir o arquivo enlaces.config");
@@ -403,7 +404,7 @@ void carregar_links_roteadores()
  */
 void carregar_quantidade_nodos()
 {
-    FILE *arquivo = fopen("configs/roteador.config", "r");
+    FILE *arquivo = fopen("roteador.config", "r");
     int aux1, aux2;
     char aux3[32];
 
@@ -439,7 +440,7 @@ void carregar_configuracoes_roteadores(int vizinhos[])
 
     for (int i = 0; i < quantidade_vizinhos; i++)
     {
-        FILE *arquivo = fopen("configs/roteador.config", "r");
+        FILE *arquivo = fopen("roteador.config", "r");
         if (!arquivo)
             die("Não foi possível abrir o arquivo roteador.config");
 
@@ -492,70 +493,8 @@ void enviar_meus_vetores()
         pacote.id_destino = vizinhos[i];
         remover_enlace[obter_index_por_id_roteador(pacote.id_destino)] += 1;
 
-        mensagem msg = {.pacote=pacote, .comportamento=COMPORTAMENTO_PACOTE_TABELA};
+        mensagem msg = {.pacote = pacote, .comportamento = COMPORTAMENTO_PACOTE_TABELA};
         fila_saida_add(msg);
-    }
-}
-
-/**
- * Enviar o pacote para o noto de destino
- * Caso o destino não seja vizinho, busca qual é o próximo
- * nodo para chegar até o vizinho
- */
-void* thread_sender()
-{
-    int id_vizinho_encaminhar_pacote, i, tamanho_socket = sizeof(struct sockaddr_in);
-    struct sockaddr_in socket_externo;
-    while(1) {
-        if(fila_saida_tem_elementos()){          
-            mensagem msg = fila_saida_get();
-            fila_saida_remove();
-
-            pacote packet = msg.pacote;
-            int comportamento = msg.comportamento;
-
-            if (DEBUG) {
-                if (comportamento == COMPORTAMENTO_PACOTE_ROTEAMENTO)
-                    printf("Enviando pacote com finalidade de roteamento de pacote\n");
-                else
-                    printf("Enviando pacote com finalidade de compartilhamento de tabela\n");
-            }
-
-            if (comportamento == COMPORTAMENTO_PACOTE_ROTEAMENTO)
-            {
-                pthread_mutex_lock(&mutex_tabela_roteamento);
-                id_vizinho_encaminhar_pacote = mapeamento_saida[obter_index_por_id_roteador(packet.id_destino)];
-                pthread_mutex_unlock(&mutex_tabela_roteamento);
-            }
-            else if (comportamento == COMPORTAMENTO_PACOTE_TABELA)
-            {
-                id_vizinho_encaminhar_pacote = packet.id_destino;
-            }
-
-            if (id_vizinho_encaminhar_pacote == VAZIO)
-            {
-                puts("O destino não é alcançável");
-            } else {
-                for (i = 1; i < quantidade_vizinhos; i++)
-                {
-                    if (roteadores_vizinhos[i].id == id_vizinho_encaminhar_pacote)
-                        break;
-                }
-
-                if (comportamento != COMPORTAMENTO_PACOTE_TABELA)
-                    printf("========> Encaminhando pacote via roteador: %d | %s:%d\n", id_vizinho_encaminhar_pacote, roteadores_vizinhos[i].ip, roteadores_vizinhos[i].porta);
-
-                memset((char *)&socket_externo, 0, sizeof(socket_externo));
-                socket_externo.sin_family = AF_INET;
-                socket_externo.sin_port = htons(roteadores_vizinhos[i].porta);
-
-                if (inet_aton(roteadores_vizinhos[i].ip, &socket_externo.sin_addr) == 0)
-                    die("O endereço do socket vizinho é inválido");
-
-                if (sendto(socket_id, &packet, sizeof(struct pacote), 0, (struct sockaddr *)&socket_externo, tamanho_socket) == -1)
-                    die("Falha ao enviar informaçãos ao socket vizinho");
-            }
-        }
     }
 }
 
@@ -581,7 +520,9 @@ void verificar_pacote_retorno(pacote packet)
 }
 
 /**
- * 
+ * Método que verificar se há alguma informação a desconsiderada
+ * Caso exista, o método remove informações da tabela de
+ * reteamento para serem atualizadas posteriormente
  */
 void verificar_enlaces()
 {
@@ -590,29 +531,27 @@ void verificar_enlaces()
 
     for (int i = 0; i < qt_nodos; i++)
     {
-        if (remover_enlace[i] > 2)
+        if (remover_enlace[i] <= 2)
+            continue;
+
+        meus_vetores_original[i] = VAZIO;
+        mapeamento_saida[i] = VAZIO;
+        if (tabela_roteamento[i] != NULL)
+            *(tabela_roteamento[i]) = VAZIO;
+
+        int *novo_vetor = copiar_vetor(meus_vetores_original, qt_nodos);
+        tabela_roteamento[obter_index_por_id_roteador(*id_roteador_atual)] = novo_vetor;
+        is_ocorreu_mudanca = 1;
+
+        for (int j = 1; j < quantidade_vizinhos; j++)
         {
-            if (tabela_roteamento[i] != NULL)
-                *(tabela_roteamento[i]) = VAZIO;
-            meus_vetores_original[i] = VAZIO;
-            mapeamento_saida[i] = VAZIO;
-
-            int *novo_vetor = copiar_vetor(meus_vetores_original, qt_nodos);
-            tabela_roteamento[obter_index_por_id_roteador(*id_roteador_atual)] = novo_vetor;
-            is_ocorreu_mudanca = 1;
-
-            for (int j = 1; j < quantidade_vizinhos; j++)
+            if (vizinhos[j] == nodos_rede[i])
             {
-                if (vizinhos[j] == nodos_rede[i])
-                {
-                    if (j < quantidade_vizinhos - 1)
-                    {
-                        vizinhos[j] = vizinhos[quantidade_vizinhos - 1];
-                    }
+                if (j < quantidade_vizinhos - 1)
+                    vizinhos[j] = vizinhos[quantidade_vizinhos - 1];
 
-                    quantidade_vizinhos--;
-                    remover_enlace[i] = 0;
-                }
+                quantidade_vizinhos--;
+                remover_enlace[i] = 0;
             }
         }
     }
@@ -683,7 +622,7 @@ void atualizar_tabela_roteamento()
         {
             if (DEBUG)
                 printf("\n\nTabela de roteamento foi atualizada ");
-                
+
             printar_tabela_roteamento();
             enviar_meus_vetores();
 
@@ -692,21 +631,201 @@ void atualizar_tabela_roteamento()
     }
 }
 
-void *thread_receiver()
-{   
+/**
+ * Adiciona pacote na fila de manipulação
+ */
+void fila_entrada_add(mensagem mensagem_nova)
+{
+    if (tamanho_atual_fila_entrada < QTD_MENSAGENS_MAX_FILA)
+    {
+        pthread_mutex_lock(&mutex_fila_entrada);
+        fila_entrada.mensagens[tamanho_atual_fila_entrada] = mensagem_nova;
+        tamanho_atual_fila_entrada++;
+        pthread_mutex_unlock(&mutex_fila_entrada);
+    }
+    else
+    {
+        printf("A fila de entrada não aceitou um novo pacote pois ela já está cheia");
+    }
+}
+
+/**
+ * Remove item da fila de manipulação
+ */
+void fila_entrada_remove()
+{
+    pthread_mutex_lock(&mutex_fila_entrada);
+    for (int i = 0; i < tamanho_atual_fila_entrada; i++)
+    {
+        fila_entrada.mensagens[i] = fila_entrada.mensagens[i + 1];
+    }
+    tamanho_atual_fila_entrada--;
+    pthread_mutex_unlock(&mutex_fila_entrada);
+}
+
+/**
+ * Método auxiliar para retornar o item na fila de manipulação
+ */
+mensagem fila_entrada_get()
+{
+    pthread_mutex_lock(&mutex_fila_entrada);
+    mensagem mensagem = fila_entrada.mensagens[0];
+    pthread_mutex_unlock(&mutex_fila_entrada);
+    return mensagem;
+}
+
+/**
+ * Método auxiliar para retornar se há itens na manipulação
+ */
+int fila_entrada_tem_elementos()
+{
+    pthread_mutex_lock(&mutex_fila_entrada);
+    int has_elemento = (tamanho_atual_fila_entrada > 0) ? 1 : 0;
+    pthread_mutex_unlock(&mutex_fila_entrada);
+    return has_elemento;
+}
+
+/**
+ * Adiciona pacote na fila de saída
+ */
+void fila_saida_add(mensagem mensagem_nova)
+{
+    if (tamanho_atual_fila_saida < QTD_MENSAGENS_MAX_FILA)
+    {
+        pthread_mutex_lock(&mutex_fila_saida);
+        fila_saida.mensagens[tamanho_atual_fila_saida] = mensagem_nova;
+        tamanho_atual_fila_saida++;
+        pthread_mutex_unlock(&mutex_fila_saida);
+    }
+    else
+    {
+        printf("A fila de saída não aceitou um novo pacote pois ela já está cheia");
+    }
+}
+
+/**
+ * Remove item da fila de saída
+ */
+void fila_saida_remove()
+{
+    pthread_mutex_lock(&mutex_fila_saida);
+    for (int i = 0; i < tamanho_atual_fila_saida; i++)
+    {
+        fila_saida.mensagens[i] = fila_saida.mensagens[i + 1];
+    }
+    tamanho_atual_fila_saida--;
+    pthread_mutex_unlock(&mutex_fila_saida);
+}
+
+
+/**
+ * Método auxiliar para retornar o item na fila de saída
+ */
+mensagem fila_saida_get()
+{
+    pthread_mutex_lock(&mutex_fila_saida);
+    mensagem mensagem = fila_saida.mensagens[0];
+    pthread_mutex_unlock(&mutex_fila_saida);
+    return mensagem;
+}
+
+/**
+ * Método auxiliar para retornar se há itens na saída
+ */
+int fila_saida_tem_elementos()
+{
+    pthread_mutex_lock(&mutex_fila_saida);
+    int has_elemento = (tamanho_atual_fila_saida > 0) ? 1 : 0;
+    pthread_mutex_unlock(&mutex_fila_saida);
+    return has_elemento;
+}
+
+/**
+ * Enviar o pacote para o noto de destino
+ * Caso o destino não seja vizinho, busca qual é o próximo
+ * nodo para chegar até o vizinho
+ */
+void *thread_sender()
+{
+    int id_vizinho_encaminhar_pacote, i, tamanho_socket = sizeof(struct sockaddr_in);
     struct sockaddr_in socket_externo;
-    int slen = sizeof(socket_externo), recv_len;
+    while (1)
+    {
+        if (fila_saida_tem_elementos())
+        {
+            mensagem msg = fila_saida_get();
+            fila_saida_remove();
+
+            pacote packet = msg.pacote;
+            int comportamento = msg.comportamento;
+
+            if (DEBUG)
+            {
+                if (comportamento == COMPORTAMENTO_PACOTE_ROTEAMENTO)
+                    printf("Enviando pacote com finalidade de roteamento de pacote\n");
+                else
+                    printf("Enviando pacote com finalidade de compartilhamento de tabela\n");
+            }
+
+            if (comportamento == COMPORTAMENTO_PACOTE_ROTEAMENTO)
+            {
+                pthread_mutex_lock(&mutex_tabela_roteamento);
+                id_vizinho_encaminhar_pacote = mapeamento_saida[obter_index_por_id_roteador(packet.id_destino)];
+                pthread_mutex_unlock(&mutex_tabela_roteamento);
+            }
+            else if (comportamento == COMPORTAMENTO_PACOTE_TABELA)
+            {
+                id_vizinho_encaminhar_pacote = packet.id_destino;
+            }
+
+            if (id_vizinho_encaminhar_pacote == VAZIO)
+            {
+                puts("O destino não é alcançável");
+            }
+            else
+            {
+                for (i = 1; i < quantidade_vizinhos; i++)
+                {
+                    if (roteadores_vizinhos[i].id == id_vizinho_encaminhar_pacote)
+                        break;
+                }
+
+                if (comportamento != COMPORTAMENTO_PACOTE_TABELA)
+                    printf("========> Encaminhando pacote via roteador: %d | %s:%d\n", id_vizinho_encaminhar_pacote, roteadores_vizinhos[i].ip, roteadores_vizinhos[i].porta);
+
+                memset((char *)&socket_externo, 0, sizeof(socket_externo));
+                socket_externo.sin_family = AF_INET;
+                socket_externo.sin_port = htons(roteadores_vizinhos[i].porta);
+
+                if (inet_aton(roteadores_vizinhos[i].ip, &socket_externo.sin_addr) == 0)
+                    die("O endereço do socket vizinho é inválido");
+
+                if (sendto(socket_id, &packet, sizeof(struct pacote), 0, (struct sockaddr *)&socket_externo, tamanho_socket) == -1)
+                    die("Falha ao enviar informaçãos ao socket vizinho");
+            }
+        }
+    }
+}
+
+/**
+ * Thread que controla recebimentos
+ * Quando a thread recebe um pacote, adiciona
+ * na fila de entrada para ser processada
+ */
+void *thread_receiver()
+{
+    struct sockaddr_in socket_externo;
+    int tamanho_socket = sizeof(socket_externo), tamanho_recebimento;
     int id_destino = -1;
     pacote packet;
     while (1)
     {
-        if ((recv_len = recvfrom(socket_id, &packet, sizeof(struct pacote), 0, (struct sockaddr *)&socket_externo, &slen)) == -1) {
-            die("recvfrom()");
-        }
+        if ((tamanho_recebimento = recvfrom(socket_id, &packet, sizeof(struct pacote), 0, (struct sockaddr *)&socket_externo, &tamanho_socket)) == -1)
+            die("Ocorreu uma falha no recimento de informação do socket");
 
-        mensagem msg = {.pacote = packet, .socket_externo = socket_externo};
-        fila_entrada_add(msg);
-    } 
+        mensagem mensagem = {.pacote = packet, .socket_externo = socket_externo};
+        fila_entrada_add(mensagem);
+    }
 }
 
 /**
@@ -720,6 +839,7 @@ void *thread_controle_vetores()
     {
         verificar_enlaces();
         enviar_meus_vetores();
+
         sleep(TIMEOUT_COMPARTILHAMENTO_TABELA_ROTEAMENTOS);
     }
 }
@@ -729,7 +849,7 @@ void *thread_controle_vetores()
  */
 void *thread_terminal()
 {
-    int i, slen = sizeof(socket_externo);
+    int i, tamanho_socket = sizeof(socket_externo);
     pacote packet;
 
     while (1)
@@ -753,7 +873,7 @@ void *thread_terminal()
         packet.confirmacao = 0;
         packet.id_origem = roteadores_vizinhos[0].id;
 
-        mensagem msg = {.pacote=packet, .comportamento=COMPORTAMENTO_PACOTE_ROTEAMENTO};
+        mensagem msg = {.pacote = packet, .comportamento = COMPORTAMENTO_PACOTE_ROTEAMENTO};
         fila_saida_add(msg);
 
         pthread_mutex_lock(&mutex_timer);
@@ -774,8 +894,8 @@ void *thread_terminal()
             {
                 printf("Pacote %d não entregue. Tentando novamente", packet.sequencia);
                 pthread_mutex_unlock(&mutex_timer);
-                mensagem msg = {.pacote=packet, .comportamento=COMPORTAMENTO_PACOTE_ROTEAMENTO};
-                fila_saida_add(msg);
+                mensagem mensagem = {.pacote = packet, .comportamento = COMPORTAMENTO_PACOTE_ROTEAMENTO};
+                fila_saida_add(mensagem);
             }
         }
 
@@ -792,138 +912,69 @@ void *thread_terminal()
 void *thread_packet_handler()
 {
     struct sockaddr_in socket_externo;
-    int i, slen = sizeof(socket_externo), recv_len;
+    int i, tamanho_socket = sizeof(socket_externo);
     int id_destino = -1;
-    pacote packet;
+    pacote response;
+    pacote pacote;
 
-    while (1) {
-        if(fila_entrada_tem_elementos()) {
+    while (1)
+    {
+        if (fila_entrada_tem_elementos())
+        {
             mensagem msg = fila_entrada_get();
             fila_entrada_remove();
-            packet = msg.pacote;
+            pacote = msg.pacote;
             socket_externo = msg.socket_externo;
 
-            id_destino = packet.id_destino;
+            id_destino = pacote.id_destino;
             sleep(1);
 
             if (id_destino != roteadores_vizinhos[0].id)
             {
                 int id_next = mapeamento_saida[obter_index_por_id_roteador(id_destino)];
 
-                if (packet.tipo == TIPO_PACOTE_DADO)
+                if (pacote.tipo == TIPO_PACOTE_DADO)
                 {
-                    printf("Roteador %d encaminhando mensagem com # sequência %d para o destino %d\n", roteadores_vizinhos[0].id, packet.sequencia, packet.id_destino);
+                    printf("Roteador %d encaminhando mensagem com #sequência %d para o destino %d\n", roteadores_vizinhos[0].id, pacote.sequencia, pacote.id_destino);
                 }
-                else if (packet.tipo == TIPO_PACOTE_CONTROLE && packet.confirmacao == 1)
+                else if (pacote.tipo == TIPO_PACOTE_CONTROLE && pacote.confirmacao == 1)
                 {
-                    printf("Roteador %d encaminhando confirmação de msg #seq:%d para o sender %d\n", roteadores_vizinhos[0].id, packet.sequencia, packet.id_destino);
+                    printf("Roteador %d encaminhando confirmação de mensagem #sequência:%d para o sender %d\n", roteadores_vizinhos[0].id, pacote.sequencia, pacote.id_destino);
                 }
-                mensagem msg = {.pacote=packet, .comportamento=COMPORTAMENTO_PACOTE_ROTEAMENTO};
-                fila_saida_add(msg);
+                mensagem msg2 = {.pacote = pacote, .comportamento = COMPORTAMENTO_PACOTE_ROTEAMENTO};
+                fila_saida_add(msg2);
             }
-            else if (id_destino == roteadores_vizinhos[0].id && packet.tipo == TIPO_PACOTE_DADO)
+            else if (id_destino == roteadores_vizinhos[0].id && pacote.tipo == TIPO_PACOTE_DADO)
             {
-                pacote response;
                 response.tipo = TIPO_PACOTE_CONTROLE;
                 response.confirmacao = 1;
                 response.id_origem = id_destino;
-                response.id_destino = packet.id_origem;
-                response.sequencia = packet.sequencia;
+                response.id_destino = pacote.id_origem;
+                response.sequencia = pacote.sequencia;
 
                 printf("Pacote recebido de %s:%d\n", inet_ntoa(socket_externo.sin_addr), ntohs(socket_externo.sin_port));
-                printf("Mensagem: %s\n", packet.conteudo);
-                puts("Enviando confirmação...");
+                printf("\n\n\n\nMENSAGEM ===> %s\n\n\n", pacote.conteudo);
+                if (DEBUG)
+                    printf("Enviando confirmação para %d", pacote.id_origem);
 
-                mensagem msg = {.pacote=response, .comportamento=COMPORTAMENTO_PACOTE_ROTEAMENTO};
+                mensagem msg = {.pacote = response, .comportamento = COMPORTAMENTO_PACOTE_ROTEAMENTO};
                 fila_saida_add(msg);
             }
-            else if (id_destino == roteadores_vizinhos[0].id && packet.confirmacao == 1)
+            else if (id_destino == roteadores_vizinhos[0].id && pacote.confirmacao == 1)
             {
-                printf("Confirmação recebida de %s:%d, mensagem #seq:%d\n", inet_ntoa(socket_externo.sin_addr), ntohs(socket_externo.sin_port), packet.sequencia);
+                printf("Confirmação recebida de %s:%d, mensagem #sequência:%d\n", inet_ntoa(socket_externo.sin_addr), ntohs(socket_externo.sin_port), pacote.sequencia);
                 pthread_mutex_lock(&mutex_timer);
                 confirmacao = 1;
                 pthread_mutex_unlock(&mutex_timer);
             }
-            else if (id_destino == roteadores_vizinhos[0].id && packet.tipo == TIPO_PACOTE_CONTROLE)
+            else if (id_destino == roteadores_vizinhos[0].id && pacote.tipo == TIPO_PACOTE_CONTROLE)
             {
-                verificar_pacote_retorno(packet);
-                remover_enlace[obter_index_por_id_roteador(packet.id_origem)] = 0;
-                tabela_roteamento[obter_index_por_id_roteador(packet.id_origem)] = copiar_vetor(packet.vetores_tabela_roteamento, QTD_MAXIMA_ROTEADORES);
+                verificar_pacote_retorno(pacote);
+                remover_enlace[obter_index_por_id_roteador(pacote.id_origem)] = 0;
+                tabela_roteamento[obter_index_por_id_roteador(pacote.id_origem)] = copiar_vetor(pacote.vetores_tabela_roteamento, QTD_MAXIMA_ROTEADORES);
                 atualizar_tabela_roteamento();
             }
         }
     }
     return 0;
-}
-
-/*Add elemento no final da fila*/
-void fila_entrada_add(mensagem mensagem_nova) {
-    if(tamanho_atual_fila_entrada < QTD_MENSAGENS_MAX_FILA) {
-        pthread_mutex_lock(&mutex_fila_entrada);
-        fila_entrada.mensagens[tamanho_atual_fila_entrada] = mensagem_nova;
-        tamanho_atual_fila_entrada++;
-        pthread_mutex_unlock(&mutex_fila_entrada);
-    } else {
-        printf("A fila de entrada não aceitou um novo pacote pois ela já está cheia");
-    }
-}
-
-/*Remove elemento do inicio da fila*/
-void fila_entrada_remove() {
-    pthread_mutex_lock(&mutex_fila_entrada);
-    for(int i = 0; i < tamanho_atual_fila_entrada; i++) {
-        fila_entrada.mensagens[i] = fila_entrada.mensagens[i+1];
-    }
-    tamanho_atual_fila_entrada--;
-    pthread_mutex_unlock(&mutex_fila_entrada);
-}
-
-mensagem fila_entrada_get() {
-    pthread_mutex_lock(&mutex_fila_entrada);
-    mensagem mensagem = fila_entrada.mensagens[0];
-    pthread_mutex_unlock(&mutex_fila_entrada);
-    return mensagem;
-}
-
-int fila_entrada_tem_elementos() {
-    pthread_mutex_lock(&mutex_fila_entrada);
-    int temElementos = (tamanho_atual_fila_entrada > 0) ? 1 : 0;
-    pthread_mutex_unlock(&mutex_fila_entrada);
-    return temElementos;
-}
-
-/*Add elemento no final da fila*/
-void fila_saida_add(mensagem mensagem_nova) {
-    if(tamanho_atual_fila_saida < QTD_MENSAGENS_MAX_FILA) {
-        pthread_mutex_lock(&mutex_fila_saida);
-        fila_saida.mensagens[tamanho_atual_fila_saida] = mensagem_nova;
-        tamanho_atual_fila_saida++;
-        pthread_mutex_unlock(&mutex_fila_saida);
-    } else {
-        printf("A fila de saída não aceitou um novo pacote pois ela já está cheia");
-    }
-}
-
-/*Remove elemento do inicio da fila*/
-void fila_saida_remove() {
-    pthread_mutex_lock(&mutex_fila_saida);
-    for(int i = 0; i < tamanho_atual_fila_saida; i++) {
-        fila_saida.mensagens[i] = fila_saida.mensagens[i+1];
-    }
-    tamanho_atual_fila_saida--;
-    pthread_mutex_unlock(&mutex_fila_saida);
-}
-
-mensagem fila_saida_get() {
-    pthread_mutex_lock(&mutex_fila_saida);
-    mensagem mensagem = fila_saida.mensagens[0];
-    pthread_mutex_unlock(&mutex_fila_saida);
-    return mensagem;
-}
-
-int fila_saida_tem_elementos() {
-    pthread_mutex_lock(&mutex_fila_saida);
-    int temElementos = (tamanho_atual_fila_saida > 0) ? 1 : 0;
-    pthread_mutex_unlock(&mutex_fila_saida);
-    return temElementos;
 }

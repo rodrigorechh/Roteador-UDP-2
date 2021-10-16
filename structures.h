@@ -3,7 +3,7 @@
 #define QTD_MENSAGENS_MAX_FILA 100
 #define DEBUG 0
 #define VAZIO -1
-#define CUSTO_MAXIMO_CONTAGEM_INFINITO 52
+#define CUSTO_MAXIMO_CONTAGEM_INFINITO 70 // valor considerado em vista da configuração de enlaces
 
 #define TIMEOUT_COMPARTILHAMENTO_TABELA_ROTEAMENTOS 30
 
