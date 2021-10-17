@@ -5,7 +5,7 @@
 #include <sys/socket.h>
 #include <pthread.h>
 #include <unistd.h>
-#include "structures.h"
+#include "definicoes.h"
 
 /**
  * Array com a configuração dos roteadores vizinhos

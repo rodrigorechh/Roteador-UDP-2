@@ -3,7 +3,7 @@
 #define QTD_MENSAGENS_MAX_FILA 100
 #define DEBUG 0
 #define VAZIO -1
-#define CUSTO_MAXIMO_CONTAGEM_INFINITO 70 // valor considerado em vista da configuração de enlaces
+#define CUSTO_MAXIMO_CONTAGEM_INFINITO 70 // valor médio considerado em vista da configuração de enlaces
 
 #define TIMEOUT_COMPARTILHAMENTO_TABELA_ROTEAMENTOS 30
 
@@ -36,7 +36,7 @@ typedef struct mensagem
     pacote pacote;
     struct sockaddr_in socket_externo;
     int comportamento;
-} mensagem;//struct trocada entre receiver, sender e package_handler.
+} mensagem;
 
 typedef struct fila_mensagens{
     mensagem mensagens[QTD_MENSAGENS_MAX_FILA];
